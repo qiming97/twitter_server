@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitter 账号管理</title>
+  
+  <!-- 字体 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- 公共样式 -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 加载中 -->
+    <div style="display: flex; align-items: center; justify-content: center; height: 100vh; gap: 8px;">
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+    </div>
+  </div>
+
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  
+  <!-- Vue Router -->
+  <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.prod.js"></script>
+  
+  <!-- SheetJS for Excel parsing -->
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  
+  <!-- 公共模块 -->
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/components.js"></script>
+  
+  <!-- 页面组件 -->
+  <script src="/static/js/pages/dashboard.js"></script>
+  <script src="/static/js/pages/import.js"></script>
+  <script src="/static/js/pages/task.js"></script>
+  <script src="/static/js/pages/accounts.js"></script>
+  <script src="/static/js/pages/extract.js"></script>
+  
+  <!-- 主应用 -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
