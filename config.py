@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     
     # 服务配置
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 35901
     DEBUG: bool = True
     
     # Twitter API 相关
