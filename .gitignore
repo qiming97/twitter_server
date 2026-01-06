@@ -27,3 +27,7 @@ logs/
 # 缓存
 .cache/
 
+# Excel 数据文件
+*.xls
+*.xlsx
+
