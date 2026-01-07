@@ -433,18 +433,36 @@ class TwitterClient:
         last_error = None
         
         for attempt in range(max_retries):
+            # 添加请求前延迟，避免请求过快触发限流
+            if attempt > 0:
+                # 指数退避: 第1次重试等3-5秒，第2次等6-10秒
+                base_wait = (attempt + 1) * 3
+                wait_time = base_wait + random.uniform(1, 3)
+                print(f"等待 {wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+            
             result = await self._do_check_account_suspended(username)
             
-            # 如果不是网络错误，直接返回
-            if not result.get("error") or result.get("exists") is not None:
+            # 如果不是错误，直接返回
+            if not result.get("error"):
                 return result
             
-            # 网络错误，重试
-            last_error = result.get("message", "未知错误")
-            if attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 2 + random.uniform(0.5, 1.5)
-                print(f"检查冻结状态网络错误，{wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries}): {last_error[:50]}")
-                await asyncio.sleep(wait_time)
+            # 检查是否是 Rate limit 错误
+            error_msg = result.get("message", "")
+            is_rate_limit = "rate limit" in error_msg.lower() or "限流" in error_msg
+            
+            # 如果有明确结果（exists 不为 None），直接返回
+            if result.get("exists") is not None:
+                return result
+            
+            last_error = error_msg
+            
+            # Rate limit 错误需要等待更长时间
+            if is_rate_limit and attempt < max_retries - 1:
+                # Rate limit 时等待更长: 10-15秒, 20-30秒, 30-45秒
+                rate_limit_wait = (attempt + 1) * 10 + random.uniform(5, 15)
+                print(f"触发限流，等待 {rate_limit_wait:.1f}秒后重试 ({attempt + 1}/{max_retries})")
+                await asyncio.sleep(rate_limit_wait)
         
         return {
             "suspended": False,
@@ -456,6 +474,9 @@ class TwitterClient:
     def _do_check_account_suspended_sync(self, username: str) -> Dict[str, Any]:
         """执行检查账号冻结状态的核心逻辑 (同步版本，在线程中执行)"""
         check_session = None
+        
+        # 添加随机延迟 1-3 秒，避免并发请求触发限流
+        time.sleep(random.uniform(1.0, 3.0))
         
         try:
             # 1. 创建独立 session - 必须使用传入的代理

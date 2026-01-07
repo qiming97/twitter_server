@@ -2,6 +2,7 @@
 任务管理器 - 后台检测任务管理
 """
 import asyncio
+import random
 import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -375,19 +376,23 @@ class TaskManager:
                         await self.save_state_to_db()
                         break
                     
-                    # 并发检测
-                    tasks = [
-                        self._check_account(db, acc) 
-                        for acc in accounts
-                    ]
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                    # 并发检测 - 每个账号之间添加延迟以避免触发限流
+                    results = []
+                    for i, acc in enumerate(accounts):
+                        if self._stop_flag or self._pause_flag:
+                            break
+                        # 每个账号之间添加随机延迟 2-4 秒
+                        if i > 0:
+                            await asyncio.sleep(random.uniform(2.0, 4.0))
+                        result = await self._check_account(db, acc)
+                        results.append(result)
                     await db.commit()
                 
                 # 更新统计
                 await self.update_pending_count()
                 
-                # 短暂休息避免请求过快
-                await asyncio.sleep(1)
+                # 批次之间休息 3-5 秒，避免请求过快触发限流
+                await asyncio.sleep(random.uniform(3.0, 5.0))
         
         except asyncio.CancelledError:
             self.add_log("warning", "任务被取消")
