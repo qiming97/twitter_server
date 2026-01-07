@@ -6,7 +6,7 @@ __pycache__/
 .venv/
 venv/
 ENV/
-
+config.py
 # IDE
 .idea/
 .vscode/
@@ -26,8 +26,4 @@ logs/
 
 # 缓存
 .cache/
-
-# Excel 数据文件
-*.xls
-*.xlsx
 

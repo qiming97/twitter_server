@@ -313,7 +313,6 @@ async def check_single_account(
             return result
         
         # ========== 步骤2: Token登录获取完整信息 (accountData逻辑) ==========
-        cookie = ""
         if cookie:
             if verbose:
                 print(f"\n📋 步骤2: Token登录获取完整信息 (accountData)...")
