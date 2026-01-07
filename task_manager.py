@@ -89,7 +89,10 @@ class TaskManager:
     def add_log(self, level: str, message: str):
         """添加日志"""
         self.log_id_counter += 1
-        now = datetime.now()
+        # 使用北京时间 (UTC+8)
+        from datetime import timezone, timedelta
+        beijing_tz = timezone(timedelta(hours=8))
+        now = datetime.now(beijing_tz)
         entry = LogEntry(
             id=self.log_id_counter,
             time=now.strftime("%H:%M:%S"),
@@ -436,7 +439,7 @@ class TaskManager:
                 account.status = "错误"
                 account.status_message = error_msg
                 self.state.error_count += 1
-                self.add_log("warning", f"@{username} - {error_msg[:50]}")
+                self.add_log("warning", f"@{username} - {error_msg[:200]}")
                 account.checked_at = datetime.utcnow()
                 self.state.processed_count += 1
                 return
@@ -484,7 +487,7 @@ class TaskManager:
                     
                 except Exception as e:
                     error_msg = str(e)
-                    self.add_log("warning", f"@{username} - Token登录失败: {error_msg[:50]}")
+                    self.add_log("warning", f"@{username} - Token登录失败: {error_msg[:200]}")
                     
                     # 3. Token登录失败，检查找回密码邮箱
                     await self._check_password_reset_email(account, client)
@@ -501,7 +504,7 @@ class TaskManager:
             account.status_message = str(e)[:200]
             self.state.error_count += 1
             self.state.processed_count += 1
-            self.add_log("error", f"@{username} - 错误: {str(e)[:50]}")
+            self.add_log("error", f"@{username} - 错误: {str(e)[:200]}")
     
     async def _check_password_reset_email(self, account: TwitterAccount, client: TwitterClient):
         """
@@ -528,14 +531,14 @@ class TaskManager:
                 # 区分网络错误和其他错误
                 if email_result.get("is_network_error") or "重试" in str(email_result.get("error", "")):
                     account.status = "错误"
-                    account.status_message = f"网络错误: {email_result.get('error', '未知')[:100]}"
+                    account.status_message = f"网络错误: {email_result.get('error', '未知')[:200]}"
                     self.state.error_count += 1
-                    self.add_log("error", f"@{username} - 网络错误: {email_result.get('error', '')[:50]}")
+                    self.add_log("error", f"@{username} - 网络错误: {email_result.get('error', '')[:200]}")
                 else:
                     account.status = "改密"
                     account.status_message = email_result.get("error") or "无法获取找回密码邮箱提示"
                     self.state.reset_pwd_count += 1
-                    self.add_log("warning", f"@{username} - 改密({account.status_message[:30]})")
+                    self.add_log("warning", f"@{username} - 改密({account.status_message[:100]})")
                 return
             
             self.add_log("info", f"@{username} - 找回密码邮箱: {masked_email}")
@@ -564,9 +567,9 @@ class TaskManager:
                 
         except Exception as e:
             account.status = "错误"
-            account.status_message = f"检查找回密码失败: {str(e)[:100]}"
+            account.status_message = f"检查找回密码失败: {str(e)[:200]}"
             self.state.error_count += 1
-            self.add_log("error", f"@{username} - 检查找回密码失败: {str(e)[:30]}")
+            self.add_log("error", f"@{username} - 检查找回密码失败: {str(e)[:200]}")
 
 
 # 全局任务管理器实例

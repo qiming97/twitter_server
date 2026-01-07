@@ -107,6 +107,7 @@ const AccountsPage = {
                   <th>年份</th>
                   <th>会员</th>
                   <th>状态</th>
+                  <th>状态信息</th>
                   <th>已提取</th>
                   <th>操作</th>
                 </tr>
@@ -123,6 +124,7 @@ const AccountsPage = {
                   <td>{{ acc.create_year || '-' }}</td>
                   <td><span class="tag" :class="acc.is_premium ? 'tag-success' : ''">{{ acc.is_premium ? '✓' : '-' }}</span></td>
                   <td><status-tag :status="acc.status" /></td>
+                  <td class="status-msg" :title="acc.status_message || ''">{{ acc.status_message || '-' }}</td>
                   <td><span class="tag" :class="acc.is_extracted ? 'tag-info' : ''">{{ acc.is_extracted ? '已提取' : '-' }}</span></td>
                   <td><button class="btn btn-sm btn-secondary" @click="copyAccount(acc)">复制</button></td>
                 </tr>
@@ -231,6 +233,15 @@ const accountsStyles = `
   .tag-info {
     background: rgba(59, 130, 246, 0.15);
     color: #3b82f6;
+  }
+  .status-msg {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: help;
   }
 `
 
