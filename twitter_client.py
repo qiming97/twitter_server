@@ -270,22 +270,49 @@ class TwitterClient:
     
     # ==================== 便捷请求方法 ====================
     
-    def _session_request(self, method: str, url: str, max_retries: int = 2, **kwargs):
+    def _session_request_sync(self, method: str, url: str, **kwargs):
+        """同步请求方法 (在线程中执行)"""
+        self._sync_session_headers()
+        if method.upper() == "GET":
+            return self.session.get(url, timeout=30, **kwargs)
+        else:
+            return self.session.post(url, timeout=30, **kwargs)
+    
+    async def _session_request(self, method: str, url: str, max_retries: int = 2, **kwargs):
         """
-        使用 self.session 发送请求 (带重试机制)
+        使用 self.session 发送请求 (带重试机制，在线程池中执行避免阻塞)
         """
-        def do_request():
-            self._sync_session_headers()
-            if method.upper() == "GET":
-                return self.session.get(url, timeout=30, **kwargs)
-            else:
-                return self.session.post(url, timeout=30, **kwargs)
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                # 使用线程池执行同步请求，避免阻塞事件循环
+                return await asyncio.to_thread(
+                    self._session_request_sync, method, url, **kwargs
+                )
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                if self.is_network_error(error_str) and attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 1.5 + random.uniform(0.5, 1.0)
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise
+        raise last_error
+    
+    def _do_send_sync(self, method: str, url: str, **kwargs) -> Any:
+        """同步发送请求 (在线程中执行)"""
+        self._sync_session_headers()
         
-        return self.retry_sync(do_request, max_retries=max_retries)
+        request_headers = dict(self.session_headers)
+        if 'headers' in kwargs:
+            request_headers.update(kwargs['headers'])
+        kwargs['headers'] = request_headers
+        
+        return self.session.request(method, url, timeout=30, **kwargs)
     
     async def _send(self, url: str, max_retries: int = 3, **kwargs) -> Any:
         """
-        发送HTTP请求 (带网络重试机制)
+        发送HTTP请求 (带网络重试机制，在线程池中执行避免阻塞)
         
         Args:
             url: 请求URL
@@ -301,16 +328,10 @@ class TwitterClient:
             await asyncio.sleep(delay)
             
             try:
-                # 确保使用最新的 csrf_token 和 cookie
-                self._sync_session_headers()
-                
-                request_headers = dict(self.session_headers)
-                if 'headers' in kwargs:
-                    request_headers.update(kwargs['headers'])
-                kwargs['headers'] = request_headers
-
-                
-                response = self.session.request(method, url, timeout=30, **kwargs)
+                # 在线程池中执行同步请求，避免阻塞事件循环
+                response = await asyncio.to_thread(
+                    self._do_send_sync, method, url, **kwargs
+                )
                 
                 # 自动更新cookie
                 if response.cookies:
@@ -430,8 +451,8 @@ class TwitterClient:
             "message": f"重试{max_retries}次后仍失败: {last_error}"
         }
     
-    async def _do_check_account_suspended(self, username: str) -> Dict[str, Any]:
-        """执行检查账号冻结状态的核心逻辑"""
+    def _do_check_account_suspended_sync(self, username: str) -> Dict[str, Any]:
+        """执行检查账号冻结状态的核心逻辑 (同步版本，在线程中执行)"""
         check_session = None
         
         try:
@@ -515,7 +536,7 @@ class TwitterClient:
             }
             
             # 4. 发送 GraphQL 请求 (带重试)
-            await asyncio.sleep(random.uniform(0.3, 1.0))
+            time.sleep(random.uniform(0.3, 1.0))
             response = self._request_with_retry(
                 check_session, "GET", url,
                 headers=request_headers, params=params, timeout=30
@@ -538,9 +559,9 @@ class TwitterClient:
             if data is not None and 'user' in data and user_data is None:
                 # API 明确返回了 user: null，账号确实不存在
                 return {
-                    "suspended": False,
-                    "exists": False,
-                    "message": "账号不存在"
+                 "suspended": True,
+                        "exists": True,
+                        "message": "账号已被冻结"
                 }
             
             # 如果 data 为空或没有 user 字段，可能是网络/解析问题，返回未知
@@ -592,7 +613,7 @@ class TwitterClient:
             
         except Exception as e:
             error_msg = str(e)
-            is_network_error = self._is_network_error(error_msg)
+            is_network_error = self.is_network_error(error_msg)
             
             if is_network_error:
                 return {
@@ -614,6 +635,10 @@ class TwitterClient:
                     check_session.close()
                 except:
                     pass
+    
+    async def _do_check_account_suspended(self, username: str) -> Dict[str, Any]:
+        """执行检查账号冻结状态 (在线程池中执行避免阻塞)"""
+        return await asyncio.to_thread(self._do_check_account_suspended_sync, username)
     
     async def get_user_info(self, username: str) -> Dict[str, Any]:
         """获取用户详细信息"""
@@ -681,7 +706,7 @@ class TwitterClient:
         """验证密码并获取账号数据 (带网络重试)"""
         data = {'password': password}
         
-        response = self._session_request(
+        response = await self._session_request(
             "POST",
             'https://x.com/i/api/1.1/account/verify_password.json',
             data=data
@@ -708,7 +733,7 @@ class TwitterClient:
         
         if resp_json.get("status") == "ok":
             # 获取更多账号信息 (带重试)
-            p13n_resp = self._session_request(
+            p13n_resp = await self._session_request(
                 "GET",
                 'https://x.com/i/api/1.1/account/personalization/p13n_data.json'
             )
@@ -779,7 +804,7 @@ class TwitterClient:
     async def get_settings_page(self) -> Optional[str]:
         """访问设置页面获取 tw_user_id (带网络重试)"""
         try:
-            response = self._session_request(
+            response = await self._session_request(
                 "GET",
                 "https://x.com/settings",
                 headers={
@@ -889,7 +914,7 @@ class TwitterClient:
         timestamp = int(time.time() * 1000)
         prefetch_url = f'https://x.com/home?prefetchTimestamp={timestamp}'
         
-        prefetch_resp = self._session_request(
+        prefetch_resp = await self._session_request(
             "GET", prefetch_url,
             headers={
                 'x-csrf-token': self.csrf_token,
@@ -918,7 +943,7 @@ class TwitterClient:
         data = {'password': password}
         tid = utils.get_tid("/i/api/1.1/account/verify_password.json")
         
-        response = self._session_request(
+        response = await self._session_request(
             "POST",
             'https://x.com/i/api/1.1/account/verify_password.json',
             data=data
@@ -978,7 +1003,7 @@ class TwitterClient:
                 self.cookie = new_cookie
             
             # 获取更多账号信息 (带重试)
-            p13n_resp = self._session_request(
+            p13n_resp = await self._session_request(
                 "GET",
                 'https://x.com/i/api/1.1/account/personalization/p13n_data.json',
                 headers={
@@ -1050,8 +1075,8 @@ class TwitterClient:
         """判断是否为网络错误 (兼容旧代码，调用静态方法)"""
         return self.is_network_error(error_msg)
     
-    async def _do_password_reset_email_hint(self, username: str) -> Dict[str, Any]:
-        """执行获取找回密码邮箱的核心逻辑"""
+    def _do_password_reset_email_hint_sync(self, username: str) -> Dict[str, Any]:
+        """执行获取找回密码邮箱的核心逻辑 (同步版本，在线程中执行)"""
         reset_session = None
         
         try:
@@ -1134,7 +1159,7 @@ class TwitterClient:
                     ct0 = new_ct0[4:].strip() if new_ct0.startswith("ct0:") else new_ct0
             
             # 4. 发起 password_reset_flow (带重试)
-            await asyncio.sleep(random.uniform(0.3, 0.8))
+            time.sleep(random.uniform(0.3, 0.8))
             resp = self._request_with_retry(
                 reset_session, "POST",
                 "https://api.x.com/1.1/onboarding/task.json?flow_name=password_reset",
@@ -1166,7 +1191,7 @@ class TwitterClient:
             
             # 5. PwrJsInstrumentationSubtask (如果存在)
             if "PwrJsInstrumentationSubtask" in subtask_ids:
-                await asyncio.sleep(random.uniform(0.2, 0.5))
+                time.sleep(random.uniform(0.2, 0.5))
                 resp = self._request_with_retry(
                     reset_session, "POST",
                     "https://api.x.com/1.1/onboarding/task.json",
@@ -1199,7 +1224,7 @@ class TwitterClient:
             
             # 6. PasswordResetBegin - 输入用户名
             if "PasswordResetBegin" in subtask_ids:
-                await asyncio.sleep(random.uniform(0.3, 0.8))
+                time.sleep(random.uniform(0.3, 0.8))
                 resp = self._request_with_retry(
                     reset_session, "POST",
                     "https://api.x.com/1.1/onboarding/task.json",
@@ -1256,7 +1281,7 @@ class TwitterClient:
                 "success": False,
                 "email_hint": None,
                 "error": error_msg,
-                "is_network_error": self._is_network_error(error_msg)
+                "is_network_error": self.is_network_error(error_msg)
             }
         finally:
             if reset_session:
@@ -1264,6 +1289,10 @@ class TwitterClient:
                     reset_session.close()
                 except:
                     pass
+    
+    async def _do_password_reset_email_hint(self, username: str) -> Dict[str, Any]:
+        """执行获取找回密码邮箱 (在线程池中执行避免阻塞)"""
+        return await asyncio.to_thread(self._do_password_reset_email_hint_sync, username)
     
     def _request_with_retry(self, session, method: str, url: str, max_retries: int = 2, **kwargs):
         """带重试的请求方法"""

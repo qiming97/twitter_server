@@ -117,6 +117,7 @@ const DashboardPage = {
                   <span>正常: <strong style="color: var(--success)">{{ taskStatus.success_count }}</strong></span>
                   <span>冻结: <strong style="color: var(--error)">{{ taskStatus.suspended_count }}</strong></span>
                   <span>改密: <strong style="color: var(--warning)">{{ taskStatus.reset_pwd_count }}</strong></span>
+                  <span>错误: <strong style="color: #8b5cf6">{{ taskStatus.error_count || 0 }}</strong></span>
                 </div>
               </div>
               <div v-else class="task-idle">

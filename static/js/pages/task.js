@@ -122,6 +122,10 @@ const TaskPage = {
               <div class="stat-value" style="color: var(--warning)">{{ taskStatus.reset_pwd_count || 0 }}</div>
               <div class="stat-label">改密</div>
             </div>
+            <div class="stat-item">
+              <div class="stat-value" style="color: #8b5cf6">{{ taskStatus.error_count || 0 }}</div>
+              <div class="stat-label">错误</div>
+            </div>
           </div>
           
           <!-- 进度条 -->
@@ -598,7 +602,7 @@ const taskStyles = `
   
   .status-stats {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 8px;
     margin-bottom: 16px;
   }
@@ -727,9 +731,14 @@ const taskStyles = `
     }
   }
   
-  @media (max-width: 768px) {
+  @media (max-width: 900px) {
     .status-stats {
       grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  @media (max-width: 600px) {
+    .status-stats {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 `

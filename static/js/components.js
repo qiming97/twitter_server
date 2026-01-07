@@ -90,7 +90,7 @@ const StatusTagComponent = {
         '冻结': 'tag-error',
         '改密': 'tag-warning',
         '待检测': 'tag-info',
-        '错误': 'tag-error',
+        '错误': 'tag-purple',
         '不存在': 'tag-error'
       }
       return map[this.status] || ''
