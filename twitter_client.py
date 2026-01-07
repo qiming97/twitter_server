@@ -531,12 +531,24 @@ class TwitterClient:
             resp_json = response.json()
             data = resp_json.get('data', {})
             
-            # 情况1: data 为空 → 账号不存在
-            if not data or not data.get('user'):
+            # 情况1: data 为空且 user 不存在 → 唯一可靠的账号不存在判断
+            # 注意: 只有明确返回空 data 或 user 为 null 时才判断不存在
+            user_data = data.get('user') if data else None
+            if data is not None and 'user' in data and user_data is None:
+                # API 明确返回了 user: null，账号确实不存在
                 return {
                     "suspended": False,
                     "exists": False,
                     "message": "账号不存在"
+                }
+            
+            # 如果 data 为空或没有 user 字段，可能是网络/解析问题，返回未知
+            if not data or 'user' not in data:
+                return {
+                    "suspended": False,
+                    "exists": None,
+                    "error": True,
+                    "message": "API返回数据异常，无法判断账号状态"
                 }
             
             result = data.get('user', {}).get('result', {})
@@ -553,9 +565,11 @@ class TwitterClient:
                         "message": "账号已被冻结"
                     }
                 else:
+                    # 不可用但非冻结，可能是其他原因（如被限制），不能确定是否存在
                     return {
                         "suspended": False,
-                        "exists": False,
+                        "exists": None,
+                        "error": True,
                         "message": f"账号不可用: {reason or message}"
                     }
             
@@ -567,9 +581,11 @@ class TwitterClient:
                     "message": "账号正常"
                 }
             
+            # 未知状态，返回 exists: None 表示无法判断
             return {
                 "suspended": False,
-                "exists": False,
+                "exists": None,
+                "error": True,
                 "message": f"未知状态: {typename}"
             }
             
