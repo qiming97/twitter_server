@@ -193,14 +193,12 @@ class TwitterClient:
                 if attempt >= max_retries - 1:
                     raise
                 
-                # 计算等待时间 (递增 + 随机抖动)
-                wait_time = retry_delay * (attempt + 1) + random.uniform(0.5, 1.5)
+                # 计算等待时间: 1-2秒
+                wait_time = random.uniform(1.0, 2.0)
                 
                 # 回调或默认日志
                 if on_retry:
                     on_retry(attempt + 1, error_str, wait_time)
-                else:
-                    print(f"网络错误，{wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries}): {error_str[:50]}")
                 
                 time.sleep(wait_time)
         
@@ -257,14 +255,12 @@ class TwitterClient:
                 if attempt >= max_retries - 1:
                     raise
                 
-                # 计算等待时间
-                wait_time = retry_delay * (attempt + 1) + random.uniform(0.5, 1.5)
+                # 计算等待时间: 1-2秒
+                wait_time = random.uniform(1.0, 2.0)
                 
                 # 回调或默认日志
                 if on_retry:
                     on_retry(attempt + 1, error_str, wait_time)
-                else:
-                    print(f"网络错误，{wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries}): {error_str[:50]}")
                 
                 await asyncio.sleep(wait_time)
         
@@ -295,7 +291,7 @@ class TwitterClient:
                 last_error = e
                 error_str = str(e)
                 if self.is_network_error(error_str) and attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 1.5 + random.uniform(0.5, 1.0)
+                    wait_time = random.uniform(1.0, 2.0)
                     await asyncio.sleep(wait_time)
                     continue
                 raise
@@ -361,8 +357,7 @@ class TwitterClient:
                 # 判断是否网络错误，可重试
                 if self._is_network_error(error_str):
                     if attempt < max_retries - 1:
-                        wait_time = (attempt + 1) * 2 + random.uniform(0.5, 1.5)
-                        print(f"网络错误，{wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries}): {error_str[:50]}")
+                        wait_time = random.uniform(1.0, 2.0)
                         await asyncio.sleep(wait_time)
                         continue
                 raise
@@ -372,8 +367,7 @@ class TwitterClient:
                 # 网络相关错误，重试
                 if self._is_network_error(error_str):
                     if attempt < max_retries - 1:
-                        wait_time = (attempt + 1) * 2 + random.uniform(0.5, 1.5)
-                        print(f"网络错误，{wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries}): {error_str[:50]}")
+                        wait_time = random.uniform(1.0, 2.0)
                         await asyncio.sleep(wait_time)
                         continue
                 raise TwitterError(f"网络请求失败: {error_str}")
@@ -435,8 +429,8 @@ class TwitterClient:
         for attempt in range(max_retries):
             # 添加请求前延迟，避免请求过快触发限流
             if attempt > 0:
-                # 重试等待: 5-10秒
-                wait_time = 5 + random.uniform(2, 5)
+                # 重试等待: 1-2秒
+                wait_time = random.uniform(1.0, 2.0)
                 await asyncio.sleep(wait_time)
             
             result = await self._do_check_account_suspended(username)
@@ -455,9 +449,9 @@ class TwitterClient:
             
             last_error = error_msg
             
-            # Rate limit 错误等待更长: 10-20秒
+            # Rate limit 错误等待: 1-2秒
             if is_rate_limit and attempt < max_retries - 1:
-                rate_limit_wait = 10 + random.uniform(5, 10)
+                rate_limit_wait = random.uniform(1.0, 2.0)
                 await asyncio.sleep(rate_limit_wait)
         
         return {
@@ -1106,8 +1100,7 @@ class TwitterClient:
             
             # 网络错误，等待后重试
             if retry < max_retries - 1:
-                wait_time = (retry + 1) * 2 + random.uniform(0.5, 1.5)
-                print(f"网络错误，{wait_time:.1f}秒后重试 ({retry + 1}/{max_retries}): {last_error}")
+                wait_time = random.uniform(1.0, 2.0)
                 await asyncio.sleep(wait_time)
         
         return {"success": False, "email_hint": None, "error": f"重试{max_retries}次后仍失败: {last_error}", "retry_count": max_retries}

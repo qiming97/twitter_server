@@ -387,17 +387,17 @@ class TaskManager:
                         except Exception as e:
                             self.add_log("error", f"检测异常: {str(e)[:100]}")
                         
-                        # 每个账号之间等待 2-4 秒
+                        # 每个账号之间等待 1-2 秒
                         if i < len(accounts) - 1:
-                            await asyncio.sleep(random.uniform(2.0, 4.0))
+                            await asyncio.sleep(random.uniform(1.0, 2.0))
                     
                     await db.commit()
                 
                 # 更新统计
                 await self.update_pending_count()
                 
-                # 批次之间休息 3-5 秒
-                await asyncio.sleep(random.uniform(3.0, 5.0))
+                # 批次之间休息 1-2 秒
+                await asyncio.sleep(random.uniform(1.0, 2.0))
         
         except asyncio.CancelledError:
             self.add_log("warning", "任务被取消")
@@ -496,11 +496,18 @@ class TaskManager:
                         f"国家:{account.country or '未知'} | 年份:{account.create_year or '未知'} | {premium_str}")
                     
                 except Exception as e:
-                    error_msg = str(e)
-                    self.add_log("warning", f"@{username} - Token登录失败: {error_msg[:200]}")
+                    error_msg = str(e).lower()
+                    self.add_log("warning", f"@{username} - Token登录失败: {str(e)[:200]}")
                     
-                    # 3. Token登录失败，检查找回密码邮箱
-                    await self._check_password_reset_email(account, client)
+                    # 如果是密码验证错误，直接标记改密，不需要找回密码邮箱验证
+                    if "密码" in error_msg or "password" in error_msg or "verify" in error_msg or "验证" in error_msg:
+                        account.status = "改密"
+                        account.status_message = f"密码验证失败: {str(e)[:100]}"
+                        self.state.reset_pwd_count += 1
+                        self.add_log("warning", f"@{username} - 改密(密码验证失败)")
+                    else:
+                        # 其他错误，检查找回密码邮箱
+                        await self._check_password_reset_email(account, client)
             else:
                 # 没有cookie，尝试检查找回密码邮箱
                 self.add_log("info", f"@{username} - 无Cookie，检查找回密码邮箱...")
