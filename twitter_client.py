@@ -9,12 +9,13 @@ import time
 import warnings
 from typing import Optional, Dict, Any
 
-from curl_cffi import requests as cffi_requests
+import requests
 import urllib3
 
 # 禁用 SSL 证书验证警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+requests.packages.urllib3.disable_warnings()
 
 from config import settings
 from exceptions import (
@@ -53,7 +54,7 @@ class TwitterClient:
         self.tw_user_id = utils.extract_user_id_from_twid(self.twid)
         
         # 初始化session
-        self.session: Optional[cffi_requests.Session] = None
+        self.session: Optional[requests.Session] = None
         self.session_headers: Dict[str, str] = {}
         
         # 账号信息
@@ -89,17 +90,16 @@ class TwitterClient:
         if not self.proxy:
             raise ValueError("代理配置不能为空，必须提供有效的代理")
         
-        proxies_dict = {
+        self.proxies_dict = {
             "http": self.proxy,
             "https": self.proxy
         }
         
-        # 使用 curl_cffi 模拟 Chrome 浏览器
-        self.session = cffi_requests.Session(
-            impersonate="chrome120", 
-            proxies=proxies_dict, 
-            verify=False
-        )
+        # 使用 requests 库
+        self.session = requests.Session()
+        self.session.trust_env = False  # 禁止从环境变量读取代理，确保使用传入的代理
+        self.session.verify = False
+        self.session.proxies = self.proxies_dict
         
         self.session_headers = {
             "x-twitter-active-user": "yes",
@@ -491,11 +491,10 @@ class TwitterClient:
                 "https": self.proxy
             }
             
-            check_session = cffi_requests.Session(
-                impersonate="chrome120",
-                proxies=proxies_dict,
-                verify=False
-            )
+            check_session = requests.Session()
+            check_session.trust_env = False  # 禁止从环境变量读取代理
+            check_session.verify = False
+            check_session.proxies = proxies_dict
             
             # 2. 先请求用户主页获取 cookie (带重试)
             page_url = f"https://x.com/{username}"
@@ -1139,11 +1138,10 @@ class TwitterClient:
                 "https": self.proxy
             }
             
-            reset_session = cffi_requests.Session(
-                impersonate="chrome120",
-                proxies=proxies_dict,
-                verify=False
-            )
+            reset_session = requests.Session()
+            reset_session.trust_env = False  # 禁止从环境变量读取代理
+            reset_session.verify = False
+            reset_session.proxies = proxies_dict
             
             # 2. 请求页面获取 cookie (带重试)
             page_response = self._request_with_retry(

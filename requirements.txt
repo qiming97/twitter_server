@@ -6,13 +6,17 @@ pydantic-settings>=2.1.0
 sqlalchemy>=2.0.0
 aiosqlite>=0.19.0
 greenlet>=3.0.0
-curl_cffi>=0.5.10
-httpx>=0.25.0
-httpx-socks>=0.7.6
+
+# HTTP 客户端
+requests>=2.31.0
+PySocks>=1.7.1  # SOCKS5 代理支持
+urllib3>=2.0.0
+
+# 解析工具
 beautifulsoup4>=4.12.0
 pyotp>=2.9.0
+
+# 文件处理
 python-multipart>=0.0.6
 openpyxl>=3.1.5
 xlrd>=2.0.1
-urllib3>=2.0.0
-requests>=2.31.0
