@@ -557,7 +557,7 @@ class TwitterClient:
                     "error": True,
                     "message": "请求返回404，可能是网络问题"
                 }
-            
+            print(response.text)
             resp_json = response.json()
             data = resp_json.get('data', {})
             
