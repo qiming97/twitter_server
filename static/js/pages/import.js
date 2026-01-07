@@ -126,7 +126,7 @@ const ImportPage = {
             <textarea 
               v-model="textForm.accountsText" 
               class="input textarea" 
-              placeholder="每行一个账号，格式：用户名----密码----2FA----邮箱----邮箱密码" 
+              placeholder="每行一个账号，格式：用户名----密码----2FA----ct0----auth_token----邮箱----邮箱密码----粉丝数----国家----年份----会员" 
               rows="12"
             ></textarea>
             <div class="form-hint">已输入 <strong>{{ accountCount }}</strong> 个账号</div>
@@ -257,34 +257,42 @@ const ImportPage = {
         return isNaN(num) ? 0 : num
       }
       
-      const ct0 = getString(row[3])
-      const authToken = getString(row[4])
-      let cookie = ''
-      if (ct0 || authToken) {
-        const parts = []
-        if (ct0) {
-          parts.push(ct0.startsWith('ct0:') ? ct0 : `ct0=${ct0}`)
+      // 第4列: ct0 (cookie)
+      let ct0 = getString(row[3])
+      // 处理 ct0 前缀格式：ct0:xxx -> ct0=xxx
+      if (ct0) {
+        if (ct0.startsWith('ct0:')) {
+          ct0 = 'ct0=' + ct0.substring(4)
+        } else if (!ct0.startsWith('ct0=')) {
+          ct0 = `ct0=${ct0}`
         }
-        if (authToken) {
-          parts.push(`auth_token=${authToken}`)
-        }
-        cookie = parts.join('; ')
       }
+      
+      // 第5列: auth_token
+      const authToken = getString(row[4])
+      
+      // 组合 cookie
+      let cookie = ''
+      const cookieParts = []
+      if (ct0) cookieParts.push(ct0)
+      if (authToken) cookieParts.push(`auth_token=${authToken}`)
+      cookie = cookieParts.join('; ')
       
       const premiumVal = getString(row[10]).toLowerCase()
       const isPremium = premiumVal === '会员' || premiumVal === '是' || premiumVal === 'yes' || premiumVal === 'true' || premiumVal === '1'
       
       return {
-        username: getString(row[0]),
-        password: getString(row[1]),
-        two_fa: getString(row[2]),
-        cookie: cookie,
-        email: getString(row[5]),
-        email_password: getString(row[6]),
-        follower_count: getNumber(row[7]),
-        country: getString(row[8]),
-        create_year: getString(row[9]),
-        is_premium: isPremium
+        username: getString(row[0]),       // 第1列: 账号
+        password: getString(row[1]),       // 第2列: 密码
+        two_fa: getString(row[2]),         // 第3列: 2FA
+        cookie: cookie,                    // 组合的 cookie
+        auth_token: authToken,             // 第5列: auth_token (单独保存)
+        email: getString(row[5]),          // 第6列: 邮箱
+        email_password: getString(row[6]), // 第7列: 邮箱密码
+        follower_count: getNumber(row[7]), // 第8列: 粉丝数
+        country: getString(row[8]),        // 第9列: 国家
+        create_year: getString(row[9]),    // 第10列: 年份
+        is_premium: isPremium              // 第11列: 会员
       }
     },
     clearFile() {
@@ -312,17 +320,50 @@ const ImportPage = {
         if (this.importMode === 'file') {
           accountsData = this.parsedAccounts
         } else {
+          // 文本导入 - 支持完整 11 列格式
+          // 格式: 用户名----密码----2FA----ct0----auth_token----邮箱----邮箱密码----粉丝数----国家----年份----会员
           const lines = this.textForm.accountsText.trim().split('\n')
           accountsData = lines
             .filter(l => l.trim())
             .map(line => {
               const parts = line.split(this.textForm.delimiter)
+              const getString = (idx) => parts[idx]?.trim() || ''
+              const getNumber = (idx) => parseInt(parts[idx]?.trim()) || 0
+              
+              // 处理 ct0 前缀格式：ct0:xxx -> ct0=xxx
+              let ct0 = getString(3)
+              if (ct0) {
+                if (ct0.startsWith('ct0:')) {
+                  ct0 = 'ct0=' + ct0.substring(4)
+                } else if (!ct0.startsWith('ct0=')) {
+                  ct0 = `ct0=${ct0}`
+                }
+              }
+              
+              // auth_token
+              const authToken = getString(4)
+              
+              // 组合 cookie
+              const cookieParts = []
+              if (ct0) cookieParts.push(ct0)
+              if (authToken) cookieParts.push(`auth_token=${authToken}`)
+              
+              // 会员判断
+              const premiumVal = getString(10).toLowerCase()
+              const isPremium = premiumVal === '会员' || premiumVal === '是' || premiumVal === 'yes' || premiumVal === 'true' || premiumVal === '1'
+              
               return {
-                username: parts[0]?.trim() || '',
-                password: parts[1]?.trim() || '',
-                two_fa: parts[2]?.trim() || '',
-                email: parts[3]?.trim() || '',
-                email_password: parts[4]?.trim() || ''
+                username: getString(0),
+                password: getString(1),
+                two_fa: getString(2),
+                cookie: cookieParts.join('; '),
+                auth_token: authToken,
+                email: getString(5),
+                email_password: getString(6),
+                follower_count: getNumber(7),
+                country: getString(8),
+                create_year: getString(9),
+                is_premium: isPremium
               }
             })
             .filter(acc => acc.username)

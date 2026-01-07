@@ -85,12 +85,18 @@ class TwitterAccount(Base):
     
     def to_dict(self) -> dict:
         """转换为字典"""
-        # 从 cookie 中提取 ct0
+        # 从 cookie 中提取 ct0 和 auth_token
         ct0 = ""
+        auth_token = self.auth_token or ""
         if self.cookie:
-            match = re.search(r'ct0=([^;]+)', self.cookie)
-            if match:
-                ct0 = match.group(1)
+            ct0_match = re.search(r'ct0=([^;]+)', self.cookie)
+            if ct0_match:
+                ct0 = f"ct0={ct0_match.group(1)}"
+            # 如果 auth_token 字段为空，尝试从 cookie 中提取
+            if not auth_token:
+                auth_match = re.search(r'auth_token=([^;]+)', self.cookie)
+                if auth_match:
+                    auth_token = auth_match.group(1)
         
         return {
             "id": self.id,
@@ -98,7 +104,7 @@ class TwitterAccount(Base):
             "password": self.password,
             "two_fa": self.two_fa,
             "ct0": ct0,
-            "auth_token": self.auth_token,
+            "auth_token": auth_token,
             "email": self.email,
             "email_password": self.email_password,
             "follower_count": self.follower_count,
@@ -119,12 +125,18 @@ class TwitterAccount(Base):
         导出为指定格式:
         用户名----密码----2FA----ct0----authtoken----邮箱----邮箱密码----粉丝数量----国家----年份----是否会员
         """
-        # 从 cookie 中提取 ct0
+        # 从 cookie 中提取 ct0 和 auth_token
         ct0 = ""
+        auth_token = self.auth_token or ""
         if self.cookie:
-            match = re.search(r'ct0=([^;]+)', self.cookie)
-            if match:
-                ct0 = match.group(1)
+            ct0_match = re.search(r'ct0=([^;]+)', self.cookie)
+            if ct0_match:
+                ct0 = f"ct0={ct0_match.group(1)}"
+            # 如果 auth_token 字段为空，尝试从 cookie 中提取
+            if not auth_token:
+                auth_match = re.search(r'auth_token=([^;]+)', self.cookie)
+                if auth_match:
+                    auth_token = auth_match.group(1)
         
         premium_str = "会员" if self.is_premium else "普通用户"
         return (
@@ -132,7 +144,7 @@ class TwitterAccount(Base):
             f"{self.password}----"
             f"{self.two_fa or ''}----"
             f"{ct0}----"
-            f"{self.auth_token or ''}----"
+            f"{auth_token}----"
             f"{self.email or ''}----"
             f"{self.email_password or ''}----"
             f"{self.follower_count}----"

@@ -188,14 +188,44 @@ async def import_accounts(
                     "username": parts[0].strip(),
                     "password": parts[1].strip(),
                 }
+                # 格式: 用户名----密码----2FA----ct0----auth_token----邮箱----邮箱密码----粉丝数----国家----年份----会员
                 if len(parts) >= 3:
                     account_data["two_fa"] = parts[2].strip() or None
                 if len(parts) >= 4:
-                    account_data["email"] = parts[3].strip() or None
+                    # ct0 字段，可能带 "ct0=" 或 "ct0:" 前缀
+                    ct0_value = parts[3].strip()
+                    if ct0_value:
+                        # 去掉 ct0= 或 ct0: 前缀，只保存值
+                        if ct0_value.startswith("ct0="):
+                            ct0_value = ct0_value[4:]
+                        elif ct0_value.startswith("ct0:"):
+                            ct0_value = ct0_value[4:]
+                        account_data["cookie"] = f"ct0={ct0_value}"
                 if len(parts) >= 5:
-                    account_data["email_password"] = parts[4].strip() or None
+                    auth_token = parts[4].strip() or None
+                    if auth_token:
+                        account_data["auth_token"] = auth_token
+                        # 同时把 auth_token 加到 cookie 中
+                        if account_data.get("cookie"):
+                            account_data["cookie"] += f";auth_token={auth_token}"
+                        else:
+                            account_data["cookie"] = f"auth_token={auth_token}"
                 if len(parts) >= 6:
-                    account_data["cookie"] = parts[5].strip() or None
+                    account_data["email"] = parts[5].strip() or None
+                if len(parts) >= 7:
+                    account_data["email_password"] = parts[6].strip() or None
+                if len(parts) >= 8:
+                    try:
+                        account_data["follower_count"] = int(parts[7].strip() or 0)
+                    except:
+                        pass
+                if len(parts) >= 9:
+                    account_data["country"] = parts[8].strip() or None
+                if len(parts) >= 10:
+                    account_data["create_year"] = parts[9].strip() or None
+                if len(parts) >= 11:
+                    premium_str = parts[10].strip()
+                    account_data["is_premium"] = premium_str == "会员"
                 
                 accounts_data.append(account_data)
         
@@ -245,6 +275,7 @@ async def import_accounts_data(
                 "password": acc.password,
                 "two_fa": acc.two_fa,
                 "cookie": acc.cookie,
+                "auth_token": acc.auth_token,
                 "email": acc.email,
                 "email_password": acc.email_password,
                 "follower_count": acc.follower_count,

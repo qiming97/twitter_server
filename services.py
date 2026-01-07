@@ -248,6 +248,8 @@ class AccountService:
                     account.two_fa = data["two_fa"]
                 if data.get("cookie"):
                     account.cookie = data["cookie"]
+                if data.get("auth_token"):
+                    account.auth_token = data["auth_token"]
                 if data.get("email"):
                     account.email = data["email"]
                 if data.get("email_password"):
@@ -267,6 +269,7 @@ class AccountService:
                     password=data.get("password", ""),
                     two_fa=data.get("two_fa"),
                     cookie=data.get("cookie"),
+                    auth_token=data.get("auth_token"),
                     email=data.get("email"),
                     email_password=data.get("email_password"),
                     follower_count=data.get("follower_count", 0),

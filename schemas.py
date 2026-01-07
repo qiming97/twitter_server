@@ -48,6 +48,7 @@ class AccountDataItem(BaseModel):
     password: str = ""
     two_fa: Optional[str] = None
     cookie: Optional[str] = None
+    auth_token: Optional[str] = None
     email: Optional[str] = None
     email_password: Optional[str] = None
     follower_count: int = 0
