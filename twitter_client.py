@@ -567,7 +567,7 @@ class TwitterClient:
                 check_session, "GET", url,
                 headers=request_headers, params=params, timeout=30
             )
-            
+            print("text:",response.text)
             if response.status_code == 404:
                 return {
                     "suspended": False,
