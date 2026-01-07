@@ -53,6 +53,7 @@ REMOTE_PROXY = "x_yaseceo-zone-resi-region-jp:QQqq123123@ee982c1739054430.iuy.us
 LOCAL_PROXY = "127.0.0.1:7897"
 
 def get_default_proxy():
+    return REMOTE_PROXY
     """根据系统自动选择代理"""
     import platform
     import subprocess

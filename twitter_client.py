@@ -435,9 +435,8 @@ class TwitterClient:
         for attempt in range(max_retries):
             # 添加请求前延迟，避免请求过快触发限流
             if attempt > 0:
-                # 短暂等待: 2-4秒
-                wait_time = 2 + random.uniform(0.5, 2)
-                print(f"等待 {wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries})")
+                # 重试等待: 5-10秒
+                wait_time = 5 + random.uniform(2, 5)
                 await asyncio.sleep(wait_time)
             
             result = await self._do_check_account_suspended(username)
@@ -456,10 +455,9 @@ class TwitterClient:
             
             last_error = error_msg
             
-            # Rate limit 错误等待稍长: 3-5秒
+            # Rate limit 错误等待更长: 10-20秒
             if is_rate_limit and attempt < max_retries - 1:
-                rate_limit_wait = 3 + random.uniform(1, 2)
-                print(f"触发限流，等待 {rate_limit_wait:.1f}秒后重试 ({attempt + 1}/{max_retries})")
+                rate_limit_wait = 10 + random.uniform(5, 10)
                 await asyncio.sleep(rate_limit_wait)
         
         return {
@@ -562,12 +560,11 @@ class TwitterClient:
             }
             
             # 4. 发送 GraphQL 请求 (带重试)
-            time.sleep(random.uniform(0.3, 1.0))
+            time.sleep(random.uniform(0.5, 1.5))
             response = self._request_with_retry(
                 check_session, "GET", url,
                 headers=request_headers, params=params, timeout=30
             )
-            print("text:",response.text)
             if response.status_code == 404:
                 return {
                     "suspended": False,

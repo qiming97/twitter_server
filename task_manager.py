@@ -376,19 +376,28 @@ class TaskManager:
                         await self.save_state_to_db()
                         break
                     
-                    # 并发检测
-                    tasks = [
-                        self._check_account(db, acc) 
-                        for acc in accounts
-                    ]
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                    # 串行检测 - 每个账号之间增加延迟避免限流
+                    for i, acc in enumerate(accounts):
+                        if self._stop_flag:
+                            break
+                        await self._pause_event.wait()
+                        
+                        try:
+                            await self._check_account(db, acc)
+                        except Exception as e:
+                            self.add_log("error", f"检测异常: {str(e)[:100]}")
+                        
+                        # 每个账号之间等待 2-4 秒
+                        if i < len(accounts) - 1:
+                            await asyncio.sleep(random.uniform(2.0, 4.0))
+                    
                     await db.commit()
                 
                 # 更新统计
                 await self.update_pending_count()
                 
-                # 批次之间短暂休息
-                await asyncio.sleep(random.uniform(0.5, 1.0))
+                # 批次之间休息 3-5 秒
+                await asyncio.sleep(random.uniform(3.0, 5.0))
         
         except asyncio.CancelledError:
             self.add_log("warning", "任务被取消")
