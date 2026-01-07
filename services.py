@@ -214,6 +214,75 @@ class AccountService:
         
         return account
     
+    async def batch_import_accounts(
+        self,
+        accounts_data: List[Dict[str, Any]]
+    ) -> int:
+        """
+        批量导入账号 - 使用批量 upsert 优化性能
+        
+        返回导入的账号数量
+        """
+        if not accounts_data:
+            return 0
+        
+        # 获取所有 username
+        usernames = [acc.get("username") for acc in accounts_data if acc.get("username")]
+        
+        # 一次性查询所有已存在的账号
+        stmt = select(TwitterAccount).where(TwitterAccount.username.in_(usernames))
+        result = await self.db.execute(stmt)
+        existing_accounts = {acc.username: acc for acc in result.scalars().all()}
+        
+        new_accounts = []
+        for data in accounts_data:
+            username = data.get("username")
+            if not username:
+                continue
+            
+            if username in existing_accounts:
+                # 更新已存在的账号
+                account = existing_accounts[username]
+                account.password = data.get("password", account.password)
+                if data.get("two_fa"):
+                    account.two_fa = data["two_fa"]
+                if data.get("cookie"):
+                    account.cookie = data["cookie"]
+                if data.get("email"):
+                    account.email = data["email"]
+                if data.get("email_password"):
+                    account.email_password = data["email_password"]
+                if data.get("follower_count"):
+                    account.follower_count = data["follower_count"]
+                if data.get("country"):
+                    account.country = data["country"]
+                if data.get("create_year"):
+                    account.create_year = data["create_year"]
+                if data.get("is_premium") is not None:
+                    account.is_premium = data["is_premium"]
+            else:
+                # 创建新账号
+                account = TwitterAccount(
+                    username=username,
+                    password=data.get("password", ""),
+                    two_fa=data.get("two_fa"),
+                    cookie=data.get("cookie"),
+                    email=data.get("email"),
+                    email_password=data.get("email_password"),
+                    follower_count=data.get("follower_count", 0),
+                    country=data.get("country"),
+                    create_year=data.get("create_year"),
+                    is_premium=data.get("is_premium", False),
+                )
+                new_accounts.append(account)
+        
+        # 批量添加新账号
+        if new_accounts:
+            self.db.add_all(new_accounts)
+        
+        await self.db.commit()
+        return len(accounts_data)
+    
     async def batch_check_accounts(
         self,
         accounts_data: List[Dict[str, Any]],
@@ -411,7 +480,9 @@ class AccountService:
         ]
     
     async def get_follower_range_statistics(self) -> List[Dict[str, Any]]:
-        """获取粉丝数量区间统计"""
+        """获取粉丝数量区间统计 - 使用单条 SQL 查询优化性能"""
+        from sqlalchemy import case, literal
+        
         ranges = [
             (0, 9, "0-9"),
             (10, 99, "10-99"),
@@ -422,21 +493,35 @@ class AccountService:
             (1000000, 999999999, "1M+"),
         ]
         
-        statistics = []
+        # 使用 CASE WHEN 一次性获取所有区间统计
+        case_conditions = []
         for min_val, max_val, label in ranges:
-            count_stmt = select(func.count()).select_from(TwitterAccount).where(
-                and_(
-                    TwitterAccount.follower_count >= min_val,
-                    TwitterAccount.follower_count <= max_val,
-                    TwitterAccount.status == AccountStatus.NORMAL.value
-                )
+            case_conditions.append(
+                func.sum(
+                    case(
+                        (and_(
+                            TwitterAccount.follower_count >= min_val,
+                            TwitterAccount.follower_count <= max_val
+                        ), 1),
+                        else_=0
+                    )
+                ).label(f"range_{min_val}_{max_val}")
             )
-            count = (await self.db.execute(count_stmt)).scalar()
+        
+        stmt = select(*case_conditions).select_from(TwitterAccount).where(
+            TwitterAccount.status == AccountStatus.NORMAL.value
+        )
+        
+        result = await self.db.execute(stmt)
+        row = result.one()
+        
+        statistics = []
+        for i, (min_val, max_val, label) in enumerate(ranges):
             statistics.append({
                 "range": label,
                 "min": min_val,
                 "max": max_val,
-                "count": count
+                "count": row[i] or 0
             })
         
         return statistics
@@ -515,47 +600,60 @@ class AccountService:
     # ==================== 统计信息 ====================
     
     async def get_status_statistics(self) -> Dict[str, int]:
-        """获取状态统计"""
-        result = {}
-        for status in AccountStatus:
-            count_stmt = select(func.count()).select_from(TwitterAccount).where(
-                TwitterAccount.status == status.value
+        """获取状态统计 - 使用单条 GROUP BY 查询优化性能"""
+        stmt = (
+            select(
+                TwitterAccount.status,
+                func.count(TwitterAccount.id).label('count')
             )
-            count = (await self.db.execute(count_stmt)).scalar()
-            result[status.value] = count
+            .group_by(TwitterAccount.status)
+        )
+        db_result = await self.db.execute(stmt)
+        rows = db_result.all()
+        
+        # 初始化所有状态为 0
+        result = {status.value: 0 for status in AccountStatus}
+        # 填入实际统计值
+        for row in rows:
+            if row.status in result:
+                result[row.status] = row.count
         
         return result
     
     async def get_overview_statistics(self) -> Dict[str, Any]:
-        """获取总览统计"""
-        # 总数
-        total_stmt = select(func.count()).select_from(TwitterAccount)
-        total = (await self.db.execute(total_stmt)).scalar() or 0
+        """获取总览统计 - 优化为单次聚合查询"""
+        from sqlalchemy import case
         
-        # 待检测数量
-        pending_stmt = select(func.count()).select_from(TwitterAccount).where(
-            TwitterAccount.status == AccountStatus.PENDING.value
-        )
-        pending_count = (await self.db.execute(pending_stmt)).scalar() or 0
+        # 使用单条查询获取所有基础统计
+        stmt = select(
+            func.count(TwitterAccount.id).label('total'),
+            func.sum(case(
+                (TwitterAccount.status == AccountStatus.PENDING.value, 1),
+                else_=0
+            )).label('pending_count'),
+            func.sum(case(
+                (TwitterAccount.is_extracted == True, 1),
+                else_=0
+            )).label('extracted_count'),
+            func.sum(case(
+                (and_(
+                    TwitterAccount.status == AccountStatus.NORMAL.value,
+                    TwitterAccount.is_extracted == False
+                ), 1),
+                else_=0
+            )).label('extractable_count'),
+        ).select_from(TwitterAccount)
         
-        # 已检测数量 (非待检测状态的)
+        result = await self.db.execute(stmt)
+        row = result.one()
+        
+        total = row.total or 0
+        pending_count = row.pending_count or 0
+        extracted_count = row.extracted_count or 0
+        extractable_count = row.extractable_count or 0
         checked_count = total - pending_count
         
-        # 已提取数量
-        extracted_stmt = select(func.count()).select_from(TwitterAccount).where(
-            TwitterAccount.is_extracted == True
-        )
-        extracted_count = (await self.db.execute(extracted_stmt)).scalar() or 0
-        
-        # 可提取数量 (正常且未提取)
-        extractable_stmt = select(func.count()).select_from(TwitterAccount).where(
-            and_(
-                TwitterAccount.status == AccountStatus.NORMAL.value,
-                TwitterAccount.is_extracted == False
-            )
-        )
-        extractable_count = (await self.db.execute(extractable_stmt)).scalar() or 0
-        
+        # 这些已经优化过，使用单次查询
         status_stats = await self.get_status_statistics()
         country_stats = await self.get_country_statistics()
         follower_stats = await self.get_follower_range_statistics()

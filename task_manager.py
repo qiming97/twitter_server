@@ -9,7 +9,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from collections import deque
 
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import async_session
@@ -235,41 +235,28 @@ class TaskManager:
         return False
     
     async def update_counts_from_db(self):
-        """从数据库更新所有统计数量"""
+        """从数据库更新所有统计数量 - 使用单次 GROUP BY 查询优化性能"""
         async with async_session() as db:
-            # 总数
-            stmt_total = select(func.count()).select_from(TwitterAccount)
-            self.state.total_count = (await db.execute(stmt_total)).scalar() or 0
+            # 使用单条查询获取所有统计
+            stmt = select(
+                func.count(TwitterAccount.id).label('total'),
+                func.sum(case((TwitterAccount.status == "待检测", 1), else_=0)).label('pending'),
+                func.sum(case((TwitterAccount.status == "正常", 1), else_=0)).label('success'),
+                func.sum(case((TwitterAccount.status == "冻结", 1), else_=0)).label('suspended'),
+                func.sum(case((TwitterAccount.status == "改密", 1), else_=0)).label('reset'),
+                func.sum(case((TwitterAccount.status == "错误", 1), else_=0)).label('error'),
+            ).select_from(TwitterAccount)
             
-            # 待检测数量
-            stmt_pending = select(func.count()).select_from(TwitterAccount).where(
-                TwitterAccount.status == "待检测"
-            )
-            self.state.pending_count = (await db.execute(stmt_pending)).scalar() or 0
+            result = await db.execute(stmt)
+            row = result.one()
             
-            # 正常数量
-            stmt_success = select(func.count()).select_from(TwitterAccount).where(
-                TwitterAccount.status == "正常"
-            )
-            db_success = (await db.execute(stmt_success)).scalar() or 0
+            self.state.total_count = row.total or 0
+            self.state.pending_count = row.pending or 0
             
-            # 冻结数量
-            stmt_suspended = select(func.count()).select_from(TwitterAccount).where(
-                TwitterAccount.status == "冻结"
-            )
-            db_suspended = (await db.execute(stmt_suspended)).scalar() or 0
-            
-            # 改密数量
-            stmt_reset = select(func.count()).select_from(TwitterAccount).where(
-                TwitterAccount.status == "改密"
-            )
-            db_reset = (await db.execute(stmt_reset)).scalar() or 0
-            
-            # 错误数量
-            stmt_error = select(func.count()).select_from(TwitterAccount).where(
-                TwitterAccount.status == "错误"
-            )
-            db_error = (await db.execute(stmt_error)).scalar() or 0
+            db_success = row.success or 0
+            db_suspended = row.suspended or 0
+            db_reset = row.reset or 0
+            db_error = row.error or 0
             
             # 如果任务不在运行中，使用数据库的统计值
             if self.state.status not in [TaskStatus.RUNNING, TaskStatus.PAUSED]:

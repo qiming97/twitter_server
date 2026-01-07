@@ -76,6 +76,10 @@ class TwitterAccount(Base):
     __table_args__ = (
         Index('idx_country_follower', 'country', 'follower_count'),
         Index('idx_status_country', 'status', 'country'),
+        # 用于可提取账号查询优化 (status='正常' AND is_extracted=False)
+        Index('idx_status_extracted', 'status', 'is_extracted'),
+        # 用于粉丝范围查询优化
+        Index('idx_status_follower', 'status', 'follower_count'),
     )
     
     def to_dict(self) -> dict:

@@ -524,8 +524,9 @@ class TwitterClient:
             if response.status_code == 404:
                 return {
                     "suspended": False,
-                    "exists": False,
-                    "message": "账号不存在"
+                    "exists": None,
+                    "error": True,
+                    "message": "请求返回404，可能是网络问题"
                 }
             
             resp_json = response.json()

@@ -212,18 +212,13 @@ async def import_accounts(
                 data=task.to_dict()
             )
         else:
-            # 仅导入不检测
-            for data in accounts_data:
-                await service._get_or_create_account(
-                    data["username"],
-                    data["password"]
-                )
-            await db.commit()
+            # 仅导入不检测 - 使用批量导入优化
+            count = await service.batch_import_accounts(accounts_data)
             
             return ApiResponse(
                 success=True,
-                message=f"导入完成，共 {len(accounts_data)} 个账号",
-                data={"count": len(accounts_data)}
+                message=f"导入完成，共 {count} 个账号",
+                data={"count": count}
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -272,40 +267,17 @@ async def import_accounts_data(
                 data=task.to_dict()
             )
         else:
-            # 仅导入不检测（包含完整数据）
-            for data in accounts_data:
-                account = await service._get_or_create_account(
-                    data["username"],
-                    data["password"]
-                )
-                # 更新额外信息
-                if data.get("two_fa"):
-                    account.two_fa = data["two_fa"]
-                if data.get("cookie"):
-                    account.cookie = data["cookie"]
-                if data.get("email"):
-                    account.email = data["email"]
-                if data.get("email_password"):
-                    account.email_password = data["email_password"]
-                if data.get("follower_count"):
-                    account.follower_count = data["follower_count"]
-                if data.get("country"):
-                    account.country = data["country"]
-                if data.get("create_year"):
-                    account.create_year = data["create_year"]
-                if data.get("is_premium") is not None:
-                    account.is_premium = data["is_premium"]
-            
-            await db.commit()
+            # 仅导入不检测 - 使用批量导入优化
+            count = await service.batch_import_accounts(accounts_data)
             
             return ApiResponse(
                 success=True,
-                message=f"导入完成，共 {len(accounts_data)} 个账号",
+                message=f"导入完成，共 {count} 个账号",
                 data={
-                    "count": len(accounts_data),
-                    "total_count": len(accounts_data),
-                    "processed_count": len(accounts_data),
-                    "success_count": len(accounts_data),
+                    "count": count,
+                    "total_count": count,
+                    "processed_count": count,
+                    "success_count": count,
                     "suspended_count": 0,
                     "reset_pwd_count": 0,
                     "status": "completed"
