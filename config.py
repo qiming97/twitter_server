@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     TWITTER_BEARER_TOKEN: str = "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
     
     # TID 算法服务地址
-    TID_SERVICE_URL: str = "http://0c9da5f52fac:35902/gettid"
+    TID_SERVICE_URL: str = "http://172.13.0.2:35902/gettid"
     
     # 2FA 服务地址
     TWO_FA_SERVICE_URL: str = "https://2fa.live/tok/"
