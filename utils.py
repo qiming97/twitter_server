@@ -197,7 +197,7 @@ def extract_visible_from_masked(masked_str: str) -> str:
     return result
 
 
-def parse_proxy(proxy_str: str, default_protocol: str = "socks5") -> Optional[str]:
+def parse_proxy(proxy_str: str, default_protocol: str = "http") -> Optional[str]:
     """
     解析代理字符串，支持多种格式：
     - host:port
@@ -209,12 +209,12 @@ def parse_proxy(proxy_str: str, default_protocol: str = "socks5") -> Optional[st
     
     Args:
         proxy_str: 代理字符串
-        default_protocol: 默认协议 (http 或 socks5)，默认用 socks5 (IP2World 等住宅代理通常用 socks5)
+        default_protocol: 默认协议 (http 或 socks5)，IP2World 住宅代理用 http
     
     注意: 
-    - 如果代理支持 SOCKS5，建议使用 socks5:// 前缀
-    - 如果代理是 HTTP 代理，使用 http:// 前缀
-    - 不指定前缀时默认使用 socks5
+    - IP2World 等住宅代理通常使用 HTTP 协议
+    - 如果需要 SOCKS5，请使用 socks5:// 前缀
+    - 不指定前缀时默认使用 http
     """
     if not proxy_str or proxy_str.strip() == "":
         return None

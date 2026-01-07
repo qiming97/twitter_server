@@ -435,9 +435,8 @@ class TwitterClient:
         for attempt in range(max_retries):
             # 添加请求前延迟，避免请求过快触发限流
             if attempt > 0:
-                # 指数退避: 第1次重试等3-5秒，第2次等6-10秒
-                base_wait = (attempt + 1) * 3
-                wait_time = base_wait + random.uniform(1, 3)
+                # 短暂等待: 2-4秒
+                wait_time = 2 + random.uniform(0.5, 2)
                 print(f"等待 {wait_time:.1f}秒后重试 ({attempt + 1}/{max_retries})")
                 await asyncio.sleep(wait_time)
             
@@ -457,10 +456,9 @@ class TwitterClient:
             
             last_error = error_msg
             
-            # Rate limit 错误需要等待更长时间
+            # Rate limit 错误等待稍长: 3-5秒
             if is_rate_limit and attempt < max_retries - 1:
-                # Rate limit 时等待更长: 10-15秒, 20-30秒, 30-45秒
-                rate_limit_wait = (attempt + 1) * 10 + random.uniform(5, 15)
+                rate_limit_wait = 3 + random.uniform(1, 2)
                 print(f"触发限流，等待 {rate_limit_wait:.1f}秒后重试 ({attempt + 1}/{max_retries})")
                 await asyncio.sleep(rate_limit_wait)
         
@@ -475,8 +473,8 @@ class TwitterClient:
         """执行检查账号冻结状态的核心逻辑 (同步版本，在线程中执行)"""
         check_session = None
         
-        # 添加随机延迟 1-3 秒，避免并发请求触发限流
-        time.sleep(random.uniform(1.0, 3.0))
+        # 添加短暂随机延迟 0.3-0.8 秒
+        time.sleep(random.uniform(0.3, 0.8))
         
         try:
             # 1. 创建独立 session - 必须使用传入的代理
