@@ -557,8 +557,26 @@ class TwitterClient:
                     "error": True,
                     "message": "请求返回404，可能是网络问题"
                 }
-            print(response.text)
-            resp_json = response.json()
+            
+            # 处理 Rate limit
+            if response.status_code == 429 or "rate limit" in response.text.lower():
+                return {
+                    "suspended": False,
+                    "exists": None,
+                    "error": True,
+                    "message": f"请求被限流(Rate limit)，请稍后重试"
+                }
+            
+            # 尝试解析 JSON
+            try:
+                resp_json = response.json()
+            except Exception as e:
+                return {
+                    "suspended": False,
+                    "exists": None,
+                    "error": True,
+                    "message": f"响应解析失败: {response.text[:100]}"
+                }
             data = resp_json.get('data', {})
             
             # 情况1: data 为空且 user 不存在 → 唯一可靠的账号不存在判断
@@ -1309,8 +1327,16 @@ class TwitterClient:
         return await asyncio.to_thread(self._do_password_reset_email_hint_sync, username)
     
     def _request_with_retry(self, session, method: str, url: str, max_retries: int = 2, **kwargs):
-        """带重试的请求方法"""
+        """带重试的请求方法 - 显式传递代理确保代理被使用"""
         last_error = None
+        
+        # 确保每次请求都使用代理
+        if self.proxy and 'proxies' not in kwargs:
+            kwargs['proxies'] = {
+                "http": self.proxy,
+                "https": self.proxy
+            }
+        
         for i in range(max_retries):
             try:
                 if method.upper() == "GET":
