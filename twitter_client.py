@@ -85,12 +85,14 @@ class TwitterClient:
     
     def _init_session(self):
         """初始化请求session"""
-        proxies_dict = None
-        if self.proxy:
-            proxies_dict = {
-                "http": self.proxy,
-                "https": self.proxy
-            }
+        # 必须使用传入的代理，不使用环境变量/系统代理
+        if not self.proxy:
+            raise ValueError("代理配置不能为空，必须提供有效的代理")
+        
+        proxies_dict = {
+            "http": self.proxy,
+            "https": self.proxy
+        }
         
         # 使用 curl_cffi 模拟 Chrome 浏览器
         self.session = cffi_requests.Session(
@@ -456,13 +458,19 @@ class TwitterClient:
         check_session = None
         
         try:
-            # 1. 创建独立 session
-            proxies_dict = None
-            if self.proxy:
-                proxies_dict = {
-                    "http": self.proxy,
-                    "https": self.proxy
+            # 1. 创建独立 session - 必须使用传入的代理
+            if not self.proxy:
+                return {
+                    "suspended": False,
+                    "exists": None,
+                    "error": True,
+                    "message": "代理配置不能为空"
                 }
+            
+            proxies_dict = {
+                "http": self.proxy,
+                "https": self.proxy
+            }
             
             check_session = cffi_requests.Session(
                 impersonate="chrome120",
@@ -1080,13 +1088,19 @@ class TwitterClient:
         reset_session = None
         
         try:
-            # 1. 创建独立 session
-            proxies_dict = None
-            if self.proxy:
-                proxies_dict = {
-                    "http": self.proxy,
-                    "https": self.proxy
+            # 1. 创建独立 session - 必须使用传入的代理
+            if not self.proxy:
+                return {
+                    "success": False,
+                    "email_hint": None,
+                    "error": "代理配置不能为空",
+                    "is_network_error": False
                 }
+            
+            proxies_dict = {
+                "http": self.proxy,
+                "https": self.proxy
+            }
             
             reset_session = cffi_requests.Session(
                 impersonate="chrome120",
