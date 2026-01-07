@@ -22,12 +22,30 @@ const AccountsPage = {
       accounts: [],
       total: 0,
       page: 1,
-      loading: false
+      loading: false,
+      // 批量选择
+      selectedIds: [],
+      // 删除确认
+      showDeleteConfirm: false,
+      deleteTarget: null,  // null: 批量删除, {id, username}: 单个删除
+      deleting: false
     }
   },
   computed: {
     countries() {
       return this.stats?.by_country || []
+    },
+    // 是否全选
+    isAllSelected() {
+      return this.accounts.length > 0 && this.selectedIds.length === this.accounts.length
+    },
+    // 是否有选中项
+    hasSelection() {
+      return this.selectedIds.length > 0
+    },
+    // 选中的账号列表
+    selectedAccounts() {
+      return this.accounts.filter(acc => this.selectedIds.includes(acc.id))
     }
   },
   template: `
@@ -84,6 +102,22 @@ const AccountsPage = {
         </div>
       </div>
 
+      <!-- 批量操作栏 -->
+      <div class="card batch-actions" v-if="hasSelection">
+        <div class="batch-info">
+          <span class="selected-count">已选择 <strong>{{ selectedIds.length }}</strong> 个账号</span>
+          <button class="btn btn-sm btn-ghost" @click="clearSelection">取消选择</button>
+        </div>
+        <div class="batch-buttons">
+          <button class="btn btn-sm btn-primary" @click="copySelectedAccounts">
+            📋 复制选中
+          </button>
+          <button class="btn btn-sm btn-danger" @click="confirmBatchDelete">
+            🗑️ 删除选中
+          </button>
+        </div>
+      </div>
+
       <!-- 账号列表 -->
       <div class="card" style="padding: 0;">
         <div class="card-header" style="padding: 16px 20px; margin-bottom: 0;">
@@ -100,6 +134,14 @@ const AccountsPage = {
             <table class="table">
               <thead>
                 <tr>
+                  <th class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      :checked="isAllSelected" 
+                      @change="toggleSelectAll"
+                      class="checkbox"
+                    />
+                  </th>
                   <th>用户名</th>
                   <th>粉丝</th>
                   <th>关注</th>
@@ -113,7 +155,15 @@ const AccountsPage = {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="acc in accounts" :key="acc.id">
+                <tr v-for="acc in accounts" :key="acc.id" :class="{ 'row-selected': selectedIds.includes(acc.id) }">
+                  <td class="checkbox-col">
+                    <input 
+                      type="checkbox" 
+                      :checked="selectedIds.includes(acc.id)" 
+                      @change="toggleSelect(acc.id)"
+                      class="checkbox"
+                    />
+                  </td>
                   <td>
                     <a :href="'https://x.com/' + acc.username" target="_blank" class="username-link">@{{ acc.username }}</a>
                     <a :href="'https://x.com/' + acc.username" target="_blank" class="profile-link" title="打开主页">🔗</a>
@@ -126,7 +176,10 @@ const AccountsPage = {
                   <td><status-tag :status="acc.status" /></td>
                   <td class="status-msg" :title="acc.status_message || ''">{{ acc.status_message || '-' }}</td>
                   <td><span class="tag" :class="acc.is_extracted ? 'tag-info' : ''">{{ acc.is_extracted ? '已提取' : '-' }}</span></td>
-                  <td><button class="btn btn-sm btn-secondary" @click="copyAccount(acc)">复制</button></td>
+                  <td class="action-col">
+                    <button class="btn btn-sm btn-secondary" @click="copyAccount(acc)" title="复制">📋</button>
+                    <button class="btn btn-sm btn-danger-outline" @click="confirmDeleteSingle(acc)" title="删除">🗑️</button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -142,16 +195,42 @@ const AccountsPage = {
         
         <empty-state v-else icon="📭" title="暂无数据" />
       </div>
+
+      <!-- 删除确认弹窗 -->
+      <div class="modal-overlay" v-if="showDeleteConfirm" @click.self="cancelDelete">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>⚠️ 确认删除</h3>
+          </div>
+          <div class="modal-body">
+            <p v-if="deleteTarget">
+              确定要删除账号 <strong>@{{ deleteTarget.username }}</strong> 吗？
+            </p>
+            <p v-else>
+              确定要删除选中的 <strong>{{ selectedIds.length }}</strong> 个账号吗？
+            </p>
+            <p class="warning-text">此操作不可撤销！</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="cancelDelete" :disabled="deleting">取消</button>
+            <button class="btn btn-danger" @click="executeDelete" :disabled="deleting">
+              {{ deleting ? '删除中...' : '确认删除' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   methods: {
     setFilterType(type) {
       this.filter.type = type
       this.page = 1
+      this.clearSelection()
       this.fetchAccounts()
     },
     async fetchAccounts() {
       this.loading = true
+      this.clearSelection()
       try {
         let res
         // 构建 is_extracted 参数
@@ -171,9 +250,82 @@ const AccountsPage = {
       }
       this.loading = false
     },
+    // 复制单个账号
     copyAccount(acc) {
       const text = Utils.formatAccountForExport(acc)
       Utils.copyToClipboard(text)
+    },
+    // 批量选择相关
+    toggleSelect(id) {
+      const index = this.selectedIds.indexOf(id)
+      if (index > -1) {
+        this.selectedIds.splice(index, 1)
+      } else {
+        this.selectedIds.push(id)
+      }
+    },
+    toggleSelectAll() {
+      if (this.isAllSelected) {
+        this.selectedIds = []
+      } else {
+        this.selectedIds = this.accounts.map(acc => acc.id)
+      }
+    },
+    clearSelection() {
+      this.selectedIds = []
+    },
+    // 复制选中的账号
+    copySelectedAccounts() {
+      const text = this.selectedAccounts.map(acc => Utils.formatAccountForExport(acc)).join('\n')
+      Utils.copyToClipboard(text)
+      Toast.success(`已复制 ${this.selectedAccounts.length} 个账号`)
+    },
+    // 删除确认
+    confirmDeleteSingle(acc) {
+      this.deleteTarget = acc
+      this.showDeleteConfirm = true
+    },
+    confirmBatchDelete() {
+      this.deleteTarget = null
+      this.showDeleteConfirm = true
+    },
+    cancelDelete() {
+      this.showDeleteConfirm = false
+      this.deleteTarget = null
+    },
+    // 执行删除
+    async executeDelete() {
+      this.deleting = true
+      try {
+        if (this.deleteTarget) {
+          // 单个删除
+          const res = await API.deleteAccount(this.deleteTarget.id)
+          if (res.success) {
+            Toast.success('账号已删除')
+            this.fetchAccounts()
+            this.$emit('refresh-stats')
+          } else {
+            Toast.error(res.message || '删除失败')
+          }
+        } else {
+          // 批量删除
+          const res = await API.batchDeleteAccounts(this.selectedIds)
+          if (res.success) {
+            Toast.success(`已删除 ${res.data?.count || this.selectedIds.length} 个账号`)
+            this.clearSelection()
+            this.fetchAccounts()
+            this.$emit('refresh-stats')
+          } else {
+            Toast.error(res.message || '删除失败')
+          }
+        }
+      } catch (e) {
+        console.error(e)
+        Toast.error('删除失败: ' + e.message)
+      }
+      this.deleting = false
+      this.showDeleteConfirm = false
+      this.deleteTarget = null
     }
   },
   created() {
@@ -243,6 +395,119 @@ const accountsStyles = `
     color: var(--text-secondary);
     cursor: help;
   }
+  
+  /* 批量操作栏 */
+  .batch-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+  }
+  .batch-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .selected-count {
+    color: var(--primary);
+  }
+  .batch-buttons {
+    display: flex;
+    gap: 8px;
+  }
+  
+  /* 复选框样式 */
+  .checkbox-col {
+    width: 40px;
+    text-align: center;
+  }
+  .checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--primary);
+  }
+  .row-selected {
+    background: rgba(59, 130, 246, 0.05);
+  }
+  
+  /* 操作列 */
+  .action-col {
+    display: flex;
+    gap: 4px;
+  }
+  .btn-danger-outline {
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+  }
+  .btn-danger-outline:hover {
+    background: var(--danger);
+    color: white;
+  }
+  
+  /* 弹窗样式 */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(2px);
+  }
+  .modal {
+    background: var(--bg-card);
+    border-radius: 12px;
+    min-width: 400px;
+    max-width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalIn 0.2s ease-out;
+  }
+  @keyframes modalIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+  .modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .modal-body {
+    padding: 24px;
+  }
+  .modal-body p {
+    margin: 0 0 12px 0;
+    line-height: 1.6;
+  }
+  .warning-text {
+    color: var(--danger);
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+  .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+  }
 `
 
 const accountsStyleEl = document.createElement('style')
@@ -250,4 +515,3 @@ accountsStyleEl.textContent = accountsStyles
 document.head.appendChild(accountsStyleEl)
 
 window.AccountsPage = AccountsPage
-

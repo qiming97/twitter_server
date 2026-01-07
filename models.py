@@ -1,6 +1,7 @@
 """
 数据库模型
 """
+import re
 from datetime import datetime
 from typing import Optional
 from enum import Enum
@@ -84,11 +85,20 @@ class TwitterAccount(Base):
     
     def to_dict(self) -> dict:
         """转换为字典"""
+        # 从 cookie 中提取 ct0
+        ct0 = ""
+        if self.cookie:
+            match = re.search(r'ct0=([^;]+)', self.cookie)
+            if match:
+                ct0 = match.group(1)
+        
         return {
             "id": self.id,
             "username": self.username,
             "password": self.password,
             "two_fa": self.two_fa,
+            "ct0": ct0,
+            "auth_token": self.auth_token,
             "email": self.email,
             "email_password": self.email_password,
             "follower_count": self.follower_count,
@@ -107,13 +117,22 @@ class TwitterAccount(Base):
     def to_export_format(self) -> str:
         """
         导出为指定格式:
-        用户名----密码----2FA----邮箱----邮箱密码----粉丝数量----国家----年份----是否会员
+        用户名----密码----2FA----ct0----authtoken----邮箱----邮箱密码----粉丝数量----国家----年份----是否会员
         """
+        # 从 cookie 中提取 ct0
+        ct0 = ""
+        if self.cookie:
+            match = re.search(r'ct0=([^;]+)', self.cookie)
+            if match:
+                ct0 = match.group(1)
+        
         premium_str = "会员" if self.is_premium else "普通用户"
         return (
             f"{self.username}----"
             f"{self.password}----"
             f"{self.two_fa or ''}----"
+            f"{ct0}----"
+            f"{self.auth_token or ''}----"
             f"{self.email or ''}----"
             f"{self.email_password or ''}----"
             f"{self.follower_count}----"

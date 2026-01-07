@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Optional, List
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -569,6 +569,62 @@ async def reset_all_accounts_status(db: AsyncSession = Depends(get_db)):
             success=True,
             message=f"已将 {count} 个账号状态重置为待检测",
             data={"count": count}
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/accounts/{account_id}", response_model=ApiResponse, tags=["账号管理"])
+async def delete_account(account_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    删除单个账号
+    """
+    from sqlalchemy import delete
+    
+    try:
+        stmt = delete(TwitterAccount).where(TwitterAccount.id == account_id)
+        result = await db.execute(stmt)
+        await db.commit()
+        
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="账号不存在")
+        
+        return ApiResponse(
+            success=True,
+            message="账号已删除",
+            data={"id": account_id}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/accounts/batch-delete", response_model=ApiResponse, tags=["账号管理"])
+async def batch_delete_accounts(
+    ids: List[int] = Body(..., embed=True, description="要删除的账号ID列表"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    批量删除账号
+    """
+    from sqlalchemy import delete
+    
+    if not ids:
+        raise HTTPException(status_code=400, detail="请提供要删除的账号ID")
+    
+    try:
+        stmt = delete(TwitterAccount).where(TwitterAccount.id.in_(ids))
+        result = await db.execute(stmt)
+        await db.commit()
+        
+        count = result.rowcount
+        return ApiResponse(
+            success=True,
+            message=f"已删除 {count} 个账号",
+            data={"count": count, "ids": ids}
         )
     except Exception as e:
         await db.rollback()

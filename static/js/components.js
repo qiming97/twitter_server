@@ -295,7 +295,7 @@ const Utils = {
   // 格式化账号为导出文本
   formatAccountForExport(acc) {
     const premium = acc.is_premium ? '会员' : '普通用户'
-    return `${acc.username}----${acc.password || ''}----${acc.two_fa || ''}----${acc.email || ''}----${acc.email_password || ''}----${acc.follower_count || 0}----${acc.country || ''}----${acc.create_year || ''}----${premium}`
+    return `${acc.username}----${acc.password || ''}----${acc.two_fa || ''}----${acc.ct0 || ''}----${acc.auth_token || ''}----${acc.email || ''}----${acc.email_password || ''}----${acc.follower_count || 0}----${acc.country || ''}----${acc.create_year || ''}----${premium}`
   },
 
   // 粉丝数量区间选项

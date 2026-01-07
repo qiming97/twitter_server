@@ -160,6 +160,16 @@ const API = {
   // 清空所有账号
   clearAllAccounts() {
     return this.post('/api/accounts/clear')
+  },
+
+  // 删除单个账号
+  deleteAccount(id) {
+    return this.request('DELETE', `/api/accounts/${id}`)
+  },
+
+  // 批量删除账号
+  batchDeleteAccounts(ids) {
+    return this.post('/api/accounts/batch-delete', { ids })
   }
 }
 
