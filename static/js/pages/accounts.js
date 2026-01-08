@@ -61,7 +61,7 @@ const AccountsPage = {
         <!-- 状态筛选 -->
         <div class="option-group" v-if="filter.type === 'status'">
           <button 
-            v-for="s in ['正常', '冻结', '改密', '错误', '待检测']" 
+            v-for="s in ['正常', '冻结', '改密', '锁号', '错误', '待检测']" 
             :key="s" 
             class="option-btn" 
             :class="{ active: filter.status === s }" 

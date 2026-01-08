@@ -44,6 +44,7 @@ class TaskState:
     success_count: int = 0
     suspended_count: int = 0
     reset_pwd_count: int = 0
+    locked_count: int = 0
     error_count: int = 0
     started_at: Optional[str] = None
     
@@ -56,6 +57,7 @@ class TaskState:
             "success_count": self.success_count,
             "suspended_count": self.suspended_count,
             "reset_pwd_count": self.reset_pwd_count,
+            "locked_count": self.locked_count,
             "error_count": self.error_count,
             "started_at": self.started_at
         }
@@ -143,6 +145,7 @@ class TaskManager:
             config.success_count = self.state.success_count
             config.suspended_count = self.state.suspended_count
             config.reset_pwd_count = self.state.reset_pwd_count
+            config.locked_count = self.state.locked_count
             config.error_count = self.state.error_count
             config.started_at = datetime.fromisoformat(self.state.started_at) if self.state.started_at else None
             
@@ -162,6 +165,7 @@ class TaskManager:
                 self.state.success_count = config.success_count
                 self.state.suspended_count = config.suspended_count
                 self.state.reset_pwd_count = config.reset_pwd_count
+                self.state.locked_count = getattr(config, 'locked_count', 0) or 0
                 self.state.error_count = config.error_count
                 self.state.started_at = config.started_at.isoformat() if config.started_at else None
                 
@@ -248,6 +252,7 @@ class TaskManager:
                 func.sum(case((TwitterAccount.status == "正常", 1), else_=0)).label('success'),
                 func.sum(case((TwitterAccount.status == "冻结", 1), else_=0)).label('suspended'),
                 func.sum(case((TwitterAccount.status == "改密", 1), else_=0)).label('reset'),
+                func.sum(case((TwitterAccount.status == "锁号", 1), else_=0)).label('locked'),
                 func.sum(case((TwitterAccount.status == "错误", 1), else_=0)).label('error'),
             ).select_from(TwitterAccount)
             
@@ -260,6 +265,7 @@ class TaskManager:
             db_success = row.success or 0
             db_suspended = row.suspended or 0
             db_reset = row.reset or 0
+            db_locked = row.locked or 0
             db_error = row.error or 0
             
             # 如果任务不在运行中，使用数据库的统计值
@@ -267,6 +273,7 @@ class TaskManager:
                 self.state.success_count = db_success
                 self.state.suspended_count = db_suspended
                 self.state.reset_pwd_count = db_reset
+                self.state.locked_count = db_locked
                 self.state.error_count = db_error
                 self.state.processed_count = self.state.total_count - self.state.pending_count
     
@@ -292,6 +299,7 @@ class TaskManager:
             self.state.success_count = 0
             self.state.suspended_count = 0
             self.state.reset_pwd_count = 0
+            self.state.locked_count = 0
             self.state.error_count = 0
             self.state.started_at = datetime.now().isoformat()
             
@@ -499,12 +507,12 @@ class TaskManager:
                     error_msg = str(e).lower()
                     self.add_log("warning", f"@{username} - Token登录失败: {str(e)[:200]}")
                     
-                    # 如果是密码验证错误，直接标记改密，不需要找回密码邮箱验证
+                    # 如果是密码验证错误，直接标记锁号，不需要找回密码邮箱验证
                     if "密码" in error_msg or "password" in error_msg or "verify" in error_msg or "验证" in error_msg:
-                        account.status = "改密"
+                        account.status = "锁号"
                         account.status_message = f"密码验证失败: {str(e)[:100]}"
-                        self.state.reset_pwd_count += 1
-                        self.add_log("warning", f"@{username} - 改密(密码验证失败)")
+                        self.state.locked_count += 1
+                        self.add_log("warning", f"@{username} - 锁号(密码验证失败)")
                     else:
                         # 其他错误，检查找回密码邮箱
                         await self._check_password_reset_email(account, client)

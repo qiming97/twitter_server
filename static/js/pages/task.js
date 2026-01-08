@@ -123,6 +123,10 @@ const TaskPage = {
               <div class="stat-label">改密</div>
             </div>
             <div class="stat-item">
+              <div class="stat-value" style="color: #e11d48">{{ taskStatus.locked_count || 0 }}</div>
+              <div class="stat-label">锁号</div>
+            </div>
+            <div class="stat-item">
               <div class="stat-value" style="color: #8b5cf6">{{ taskStatus.error_count || 0 }}</div>
               <div class="stat-label">错误</div>
             </div>

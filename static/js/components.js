@@ -89,6 +89,7 @@ const StatusTagComponent = {
         '正常': 'tag-success',
         '冻结': 'tag-error',
         '改密': 'tag-warning',
+        '锁号': 'tag-locked',
         '待检测': 'tag-info',
         '错误': 'tag-purple',
         '不存在': 'tag-error'

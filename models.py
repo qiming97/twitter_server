@@ -17,6 +17,7 @@ class AccountStatus(str, Enum):
     NORMAL = "正常"      # 正常可用
     SUSPENDED = "冻结"   # 已被冻结
     RESET_PWD = "改密"   # 需要改密
+    LOCKED = "锁号"      # 密码验证失败锁定
     NOT_FOUND = "不存在" # 账号不存在
     PENDING = "待检测"   # 待检测
     ERROR = "错误"       # 检测错误
@@ -172,6 +173,7 @@ class TaskConfig(Base):
     success_count: Mapped[int] = mapped_column(Integer, default=0)
     suspended_count: Mapped[int] = mapped_column(Integer, default=0)
     reset_pwd_count: Mapped[int] = mapped_column(Integer, default=0)
+    locked_count: Mapped[int] = mapped_column(Integer, default=0)
     error_count: Mapped[int] = mapped_column(Integer, default=0)
     
     # 时间戳
