@@ -270,11 +270,11 @@ class TwitterClient:
     
     def _session_request_sync(self, method: str, url: str, **kwargs):
         """同步请求方法 (在线程中执行)"""
-            self._sync_session_headers()
-            if method.upper() == "GET":
-                return self.session.get(url, timeout=30, **kwargs)
-            else:
-                return self.session.post(url, timeout=30, **kwargs)
+        self._sync_session_headers()
+        if method.upper() == "GET":
+            return self.session.get(url, timeout=30, **kwargs)
+        else:
+            return self.session.post(url, timeout=30, **kwargs)
         
     async def _session_request(self, method: str, url: str, max_retries: int = 2, **kwargs):
         """
@@ -478,10 +478,10 @@ class TwitterClient:
                     "message": "代理配置不能为空"
                 }
             
-                proxies_dict = {
-                    "http": self.proxy,
-                    "https": self.proxy
-                }
+            proxies_dict = {
+                "http": self.proxy,
+                "https": self.proxy
+            }
             
             check_session = requests.Session()
             check_session.trust_env = False  # 禁止从环境变量读取代理
@@ -578,7 +578,7 @@ class TwitterClient:
             
             # 尝试解析 JSON
             try:
-            resp_json = response.json()
+                resp_json = response.json()
             except Exception as e:
                 return {
                     "suspended": False,
@@ -594,9 +594,9 @@ class TwitterClient:
             if data is not None and 'user' in data and user_data is None:
                 # API 明确返回了 user: null，账号确实不存在
                 return {
-                 "suspended": True,
-                        "exists": True,
-                        "message": "账号已被冻结"
+                    "suspended": True,
+                    "exists": True,
+                    "message": "账号已被冻结"
                 }
             
             # 如果 data 为空或没有 user 字段，可能是网络/解析问题，返回未知
@@ -1123,10 +1123,10 @@ class TwitterClient:
                     "is_network_error": False
                 }
             
-                proxies_dict = {
-                    "http": self.proxy,
-                    "https": self.proxy
-                }
+            proxies_dict = {
+                "http": self.proxy,
+                "https": self.proxy
+            }
             
             reset_session = requests.Session()
             reset_session.trust_env = False  # 禁止从环境变量读取代理
