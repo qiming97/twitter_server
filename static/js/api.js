@@ -150,6 +150,11 @@ const API = {
     return this.post('/api/task/stop')
   },
 
+  // 清空任务统计（仅清空面板统计，不删除账号数据）
+  clearTaskStats() {
+    return this.post('/api/task/clear-stats')
+  },
+
   // ==================== 账号管理 API ====================
 
   // 重置所有账号状态为待检测

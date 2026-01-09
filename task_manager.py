@@ -360,8 +360,33 @@ class TaskManager:
         await self.update_counts_from_db()
         return {"success": True, "data": self.state.to_dict()}
     
+    async def clear_stats(self):
+        """清空任务统计（仅清空面板统计，不删除账号数据）"""
+        if self.state.status == TaskStatus.RUNNING:
+            return {"success": False, "message": "任务运行中，无法清空统计"}
+        
+        # 清空面板统计
+        self.state.processed_count = 0
+        self.state.success_count = 0
+        self.state.suspended_count = 0
+        self.state.reset_pwd_count = 0
+        self.state.locked_count = 0
+        self.state.error_count = 0
+        self.state.status = TaskStatus.IDLE
+        self.state.started_at = None
+        
+        # 清空日志
+        self.logs.clear()
+        self.log_id_counter = 0
+        
+        # 保存到数据库
+        await self.save_state_to_db()
+        
+        self.add_log("info", "任务统计已清空")
+        return {"success": True, "message": "任务统计已清空"}
+    
     async def _run_task(self):
-        """后台执行检测任务"""
+        """后台执行检测任务 - 真正的并发执行"""
         try:
             while not self._stop_flag:
                 # 检查暂停
@@ -386,34 +411,194 @@ class TaskManager:
                         await self._reset_panel_stats()
                         break
                     
-                    # 串行检测 - 每个账号之间增加延迟避免限流
-                    for i, acc in enumerate(accounts):
-                        if self._stop_flag:
-                            break
-                        await self._pause_event.wait()
-                        
-                        try:
-                            await self._check_account(db, acc)
-                        except Exception as e:
-                            self.add_log("error", f"检测异常: {str(e)[:100]}")
-                        
-                        # 每个账号之间等待 1-2 秒
-                        if i < len(accounts) - 1:
-                            await asyncio.sleep(random.uniform(1.0, 2.0))
-                    
-                    await db.commit()
+                    # 提取账号数据（避免 session 关闭后无法访问）
+                    account_data_list = [
+                        {
+                            "id": acc.id,
+                            "username": acc.username,
+                            "password": acc.password,
+                            "cookie": acc.cookie,
+                            "email": acc.email,
+                        }
+                        for acc in accounts
+                    ]
+                
+                # 并发检测 - 使用 asyncio.gather 实现真正的并发
+                self.add_log("info", f"开始并发检测 {len(account_data_list)} 个账号...")
+                
+                tasks = [
+                    self._check_account_concurrent(acc_data)
+                    for acc_data in account_data_list
+                ]
+                
+                # 并发执行所有检测任务
+                await asyncio.gather(*tasks, return_exceptions=True)
                 
                 # 更新统计
                 await self.update_pending_count()
                 
-                # 批次之间休息 1-2 秒
-                await asyncio.sleep(random.uniform(1.0, 2.0))
+                # 批次之间休息 0.5-1 秒
+                await asyncio.sleep(random.uniform(0.5, 1.0))
         
         except asyncio.CancelledError:
             self.add_log("warning", "任务被取消")
         except Exception as e:
             self.add_log("error", f"任务异常: {str(e)}")
             self.state.status = TaskStatus.STOPPED
+    
+    async def _check_account_concurrent(self, acc_data: dict):
+        """
+        并发检测单个账号（使用独立的数据库 session）
+        """
+        # 检查暂停和停止
+        await self._pause_event.wait()
+        if self._stop_flag:
+            return
+        
+        # 添加随机延迟，避免所有请求同时发出
+        await asyncio.sleep(random.uniform(0.1, 0.5))
+        
+        account_id = acc_data["id"]
+        username = acc_data["username"]
+        password = acc_data["password"]
+        cookie = acc_data.get("cookie")
+        email = acc_data.get("email")
+        
+        try:
+            self.add_log("info", f"开始检测: @{username}")
+            
+            # 创建客户端
+            client = TwitterClient(
+                cookie=cookie or "",
+                proxy=self.proxy,
+                password=password
+            )
+            client.username = username
+            
+            # 1. 检测是否冻结
+            suspend_result = await client.check_account_suspended(username)
+            
+            # 使用独立的 session 更新数据库
+            async with async_session() as db:
+                # 重新获取账号对象
+                stmt = select(TwitterAccount).where(TwitterAccount.id == account_id)
+                result = await db.execute(stmt)
+                account = result.scalar_one_or_none()
+                
+                if not account:
+                    self.add_log("error", f"@{username} - 账号记录不存在")
+                    return
+                
+                if suspend_result.get("suspended"):
+                    account.status = "冻结"
+                    account.status_message = "账号已冻结"
+                    self.state.suspended_count += 1
+                    self.add_log("error", f"@{username} - 冻结")
+                    account.checked_at = datetime.utcnow()
+                    self.state.processed_count += 1
+                    await db.commit()
+                    return
+                
+                # 检查是否是网络错误 (exists 为 None)
+                if suspend_result.get("error") and suspend_result.get("exists") is None:
+                    error_msg = suspend_result.get("message", "网络错误")
+                    account.status = "错误"
+                    account.status_message = error_msg
+                    self.state.error_count += 1
+                    self.add_log("warning", f"@{username} - {error_msg[:200]}")
+                    account.checked_at = datetime.utcnow()
+                    self.state.processed_count += 1
+                    await db.commit()
+                    return
+                
+                # 账号不存在 (exists 明确为 False)
+                if suspend_result.get("exists") is False:
+                    account.status = "错误"
+                    account.status_message = "账号不存在"
+                    self.state.error_count += 1
+                    self.add_log("error", f"@{username} - 账号不存在")
+                    account.checked_at = datetime.utcnow()
+                    self.state.processed_count += 1
+                    await db.commit()
+                    return
+                
+                # 2. 账号未冻结，使用Token登录获取完整信息
+                if cookie:
+                    try:
+                        self.add_log("info", f"@{username} - Token登录获取信息...")
+                        account_info = await client.account_data(password)
+                        
+                        # 更新账号信息
+                        account.follower_count = client.follower_count
+                        account.following_count = client.following_count
+                        account.country = client.country
+                        account.is_premium = client.is_premium
+                        
+                        # 解析创建年份
+                        if client.create_time:
+                            parts = client.create_time.split()
+                            account.create_year = parts[-1] if parts else ""
+                        
+                        # 更新cookie
+                        account.cookie = client.cookie
+                        
+                        account.status = "正常"
+                        account.status_message = "正常"
+                        self.state.success_count += 1
+                        
+                        premium_str = "会员" if account.is_premium else "普通用户"
+                        self.add_log("success", 
+                            f"@{username} - 正常 | 粉丝:{account.follower_count} | "
+                            f"国家:{account.country or '未知'} | 年份:{account.create_year or '未知'} | {premium_str}")
+                        
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        self.add_log("warning", f"@{username} - Token登录失败: {str(e)[:200]}")
+                        
+                        # 如果是密码验证错误或认证错误(code 32)，直接标记锁号
+                        is_locked = (
+                            "密码" in error_msg or 
+                            "password" in error_msg or 
+                            "verify" in error_msg or 
+                            "验证" in error_msg or
+                            "authenticate" in error_msg or
+                            "code\":32" in error_msg or
+                            '"code":32' in error_msg or
+                            "code: 32" in error_msg
+                        )
+                        
+                        if is_locked:
+                            account.status = "锁号"
+                            account.status_message = f"密码验证失败: {str(e)[:100]}"
+                            self.state.locked_count += 1
+                            self.add_log("warning", f"@{username} - 锁号(密码验证失败)")
+                        else:
+                            # 其他错误，检查找回密码邮箱
+                            await self._check_password_reset_email(account, client)
+                else:
+                    # 没有cookie，尝试检查找回密码邮箱
+                    self.add_log("info", f"@{username} - 无Cookie，检查找回密码邮箱...")
+                    await self._check_password_reset_email(account, client)
+                
+                account.checked_at = datetime.utcnow()
+                self.state.processed_count += 1
+                await db.commit()
+                
+        except Exception as e:
+            # 使用独立 session 更新错误状态
+            async with async_session() as db:
+                stmt = select(TwitterAccount).where(TwitterAccount.id == account_id)
+                result = await db.execute(stmt)
+                account = result.scalar_one_or_none()
+                if account:
+                    account.status = "错误"
+                    account.status_message = str(e)[:200]
+                    account.checked_at = datetime.utcnow()
+                    await db.commit()
+            
+            self.state.error_count += 1
+            self.state.processed_count += 1
+            self.add_log("error", f"@{username} - 错误: {str(e)[:200]}")
     
     async def _check_account(self, db: AsyncSession, account: TwitterAccount):
         """

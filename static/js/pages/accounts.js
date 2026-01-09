@@ -125,6 +125,9 @@ const AccountsPage = {
             👥 账号列表 
             <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted); margin-left: 6px;">共 {{ total }} 个</span>
           </h3>
+          <button class="btn btn-sm btn-secondary" @click="fetchAccounts" :disabled="loading">
+            🔄 刷新
+          </button>
         </div>
         
         <loading-spinner v-if="loading" />

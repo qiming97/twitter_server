@@ -185,8 +185,11 @@ const DashboardPage = {
     }
   },
   methods: {
-    async fetchStats() {
-      this.loading = true
+    async fetchStats(showLoading = true) {
+      // 只有首次加载时显示 loading，自动刷新时不显示
+      if (showLoading && !this.stats) {
+        this.loading = true
+      }
       try {
         this.stats = await API.getStatistics()
       } catch (e) {
@@ -210,13 +213,14 @@ const DashboardPage = {
     }
   },
   mounted() {
-    this.fetchStats()
+    this.fetchStats(true)  // 首次加载显示 loading
     this.fetchTaskStatus()
     
-    // 定时刷新任务状态
+    // 定时刷新统计数据和任务状态
     this._timer = setInterval(() => {
+      this.fetchStats(false)  // 自动刷新不显示 loading
       this.fetchTaskStatus()
-    }, 5000)
+    }, 3000)  // 每3秒刷新一次
   },
   beforeUnmount() {
     if (this._timer) {

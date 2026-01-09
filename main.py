@@ -577,6 +577,13 @@ async def stop_task():
     return ApiResponse(**result)
 
 
+@app.post("/api/task/clear-stats", response_model=ApiResponse, tags=["任务管理"])
+async def clear_task_stats():
+    """清空任务统计（仅清空面板统计，不删除账号数据）"""
+    result = await task_manager.clear_stats()
+    return ApiResponse(**result)
+
+
 # ==================== 账号管理 ====================
 
 @app.post("/api/accounts/reset-status", response_model=ApiResponse, tags=["账号管理"])

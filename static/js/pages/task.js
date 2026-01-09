@@ -83,21 +83,23 @@ const TaskPage = {
             </div>
           </div>
           
-          <!-- 危险操作按钮 -->
+          <!-- 操作按钮 -->
           <div class="danger-actions" v-if="isStopped">
+            <button 
+              class="btn btn-sm btn-secondary" 
+              @click="clearTaskStats"
+              :disabled="actionLoading"
+              title="仅清空任务面板统计，不影响账号数据"
+            >
+              🧹 清空统计
+            </button>
             <button 
               class="btn btn-sm btn-warning" 
               @click="confirmResetStatus"
               :disabled="actionLoading || !taskStatus || taskStatus.total_count === 0"
+              title="将所有账号状态重置为待检测"
             >
               🔄 重置状态
-            </button>
-            <button 
-              class="btn btn-sm btn-error" 
-              @click="confirmClearAccounts"
-              :disabled="actionLoading || !taskStatus || taskStatus.total_count === 0"
-            >
-              🗑️ 清空账号
             </button>
           </div>
           
@@ -419,34 +421,14 @@ const TaskPage = {
       this.actionLoading = false
     },
     
-    // 清空所有账号
-    async confirmClearAccounts() {
-      const count = this.taskStatus?.total_count || 0
-      
-      // 第一次确认
-      const firstConfirm = await Modal.danger(
-        `确定要删除所有 <strong>${count}</strong> 个账号吗？<br><br>此操作将 <strong>永久删除</strong> 所有账号数据！<br><br><span style="color:#ef4444;font-weight:bold">此操作不可撤销！</span>`,
-        '危险操作'
-      )
-      if (!firstConfirm) return
-      
-      // 二次确认
-      const secondConfirm = await Modal.show({
-        title: '🚨 最后确认',
-        message: `真的要删除全部 <strong style="color:#ef4444">${count}</strong> 个账号吗？<br><br>点击 "确认删除" 将永久清空数据`,
-        type: 'danger',
-        dangerous: true,
-        confirmText: '确认删除',
-        cancelText: '取消'
-      })
-      if (!secondConfirm) return
-
+    // 清空任务统计（仅清空面板统计，不删除账号数据）
+    async clearTaskStats() {
       this.actionLoading = true
       try {
-        const res = await API.clearAllAccounts()
+        const res = await API.clearTaskStats()
         if (res.success) {
-          Toast.success(res.message || '账号已清空')
-          this.addLocalLog('error', `已删除所有 ${count} 个账号`)
+          Toast.success('任务统计已清空')
+          this.addLocalLog('info', '任务统计已清空')
           this.fetchStatus()
         } else {
           Toast.error(res.message)
