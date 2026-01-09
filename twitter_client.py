@@ -91,9 +91,9 @@ class TwitterClient:
             raise ValueError("代理配置不能为空，必须提供有效的代理")
         
         self.proxies_dict = {
-            "http": self.proxy,
-            "https": self.proxy
-        }
+                "http": self.proxy,
+                "https": self.proxy
+            }
         
         # 使用 requests 库
         self.session = requests.Session()
@@ -270,12 +270,12 @@ class TwitterClient:
     
     def _session_request_sync(self, method: str, url: str, **kwargs):
         """同步请求方法 (在线程中执行)"""
-        self._sync_session_headers()
-        if method.upper() == "GET":
-            return self.session.get(url, timeout=30, **kwargs)
-        else:
-            return self.session.post(url, timeout=30, **kwargs)
-    
+            self._sync_session_headers()
+            if method.upper() == "GET":
+                return self.session.get(url, timeout=30, **kwargs)
+            else:
+                return self.session.post(url, timeout=30, **kwargs)
+        
     async def _session_request(self, method: str, url: str, max_retries: int = 2, **kwargs):
         """
         使用 self.session 发送请求 (带重试机制，在线程池中执行避免阻塞)
@@ -478,10 +478,10 @@ class TwitterClient:
                     "message": "代理配置不能为空"
                 }
             
-            proxies_dict = {
-                "http": self.proxy,
-                "https": self.proxy
-            }
+                proxies_dict = {
+                    "http": self.proxy,
+                    "https": self.proxy
+                }
             
             check_session = requests.Session()
             check_session.trust_env = False  # 禁止从环境变量读取代理
@@ -578,7 +578,7 @@ class TwitterClient:
             
             # 尝试解析 JSON
             try:
-                resp_json = response.json()
+            resp_json = response.json()
             except Exception as e:
                 return {
                     "suspended": False,
@@ -1123,10 +1123,10 @@ class TwitterClient:
                     "is_network_error": False
                 }
             
-            proxies_dict = {
-                "http": self.proxy,
-                "https": self.proxy
-            }
+                proxies_dict = {
+                    "http": self.proxy,
+                    "https": self.proxy
+                }
             
             reset_session = requests.Session()
             reset_session.trust_env = False  # 禁止从环境变量读取代理

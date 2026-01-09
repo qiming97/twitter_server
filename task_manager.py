@@ -382,6 +382,8 @@ class TaskManager:
                         self.state.status = TaskStatus.COMPLETED
                         self.add_log("success", "所有账号检测完成")
                         await self.save_state_to_db()
+                        # 检测完成后清零任务面板统计（数据库中的账号数据保持不变）
+                        await self._reset_panel_stats()
                         break
                     
                     # 串行检测 - 每个账号之间增加延迟避免限流
@@ -507,8 +509,19 @@ class TaskManager:
                     error_msg = str(e).lower()
                     self.add_log("warning", f"@{username} - Token登录失败: {str(e)[:200]}")
                     
-                    # 如果是密码验证错误，直接标记锁号，不需要找回密码邮箱验证
-                    if "密码" in error_msg or "password" in error_msg or "verify" in error_msg or "验证" in error_msg:
+                    # 如果是密码验证错误或认证错误(code 32)，直接标记锁号，不需要找回密码邮箱验证
+                    is_locked = (
+                        "密码" in error_msg or 
+                        "password" in error_msg or 
+                        "verify" in error_msg or 
+                        "验证" in error_msg or
+                        "authenticate" in error_msg or  # code 32: Could not authenticate you
+                        "code\":32" in error_msg or     # 错误码 32
+                        '"code":32' in error_msg or
+                        "code: 32" in error_msg
+                    )
+                    
+                    if is_locked:
                         account.status = "锁号"
                         account.status_message = f"密码验证失败: {str(e)[:100]}"
                         self.state.locked_count += 1
@@ -530,6 +543,16 @@ class TaskManager:
             self.state.error_count += 1
             self.state.processed_count += 1
             self.add_log("error", f"@{username} - 错误: {str(e)[:200]}")
+    
+    async def _reset_panel_stats(self):
+        """任务完成后重置面板统计（不影响数据库中的账号数据）"""
+        self.state.processed_count = 0
+        self.state.success_count = 0
+        self.state.suspended_count = 0
+        self.state.reset_pwd_count = 0
+        self.state.locked_count = 0
+        self.state.error_count = 0
+        self.add_log("info", "任务面板已清零")
     
     async def _check_password_reset_email(self, account: TwitterAccount, client: TwitterClient):
         """

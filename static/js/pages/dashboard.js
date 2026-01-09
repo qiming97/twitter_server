@@ -18,22 +18,8 @@ const DashboardPage = {
       <loading-spinner v-if="loading" />
       
       <template v-else-if="stats">
-        <!-- 第一行：核心数据 -->
-        <div class="grid grid-7" style="margin-bottom: 20px;">
-          <div class="stat-card main-stat" style="--status-color: var(--primary)">
-            <div class="stat-icon">📊</div>
-            <div>
-              <div class="stat-value gradient-text">{{ stats.total.toLocaleString() }}</div>
-              <div class="stat-label">账号总数</div>
-            </div>
-          </div>
-          <div class="stat-card" style="--status-color: var(--info)">
-            <div class="stat-icon">⏳</div>
-            <div>
-              <div class="stat-value" style="color: var(--info)">{{ stats.pending_count.toLocaleString() }}</div>
-              <div class="stat-label">待检测</div>
-            </div>
-          </div>
+        <!-- 第一行：核心状态数据（正常、冻结、改密、锁号、错误） -->
+        <div class="grid grid-5" style="margin-bottom: 20px;">
           <div class="stat-card" style="--status-color: var(--success)">
             <div class="stat-icon">✓</div>
             <div>
@@ -241,19 +227,19 @@ const DashboardPage = {
 
 // 页面专用样式
 const dashboardStyles = `
-  .grid-7 {
+  .grid-5 {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px;
   }
-  @media (max-width: 1600px) {
-    .grid-7 { grid-template-columns: repeat(4, 1fr); }
-  }
-  @media (max-width: 1200px) {
-    .grid-7 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 1400px) {
+    .grid-5 { grid-template-columns: repeat(3, 1fr); }
   }
   @media (max-width: 900px) {
-    .grid-7 { grid-template-columns: repeat(2, 1fr); }
+    .grid-5 { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .grid-5 { grid-template-columns: 1fr; }
   }
   
   .gradient-text {

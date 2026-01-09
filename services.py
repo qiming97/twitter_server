@@ -114,10 +114,28 @@ class AccountService:
                     account.checked_at = datetime.utcnow()
                     
                 except TwitterError as e:
-                    # Token登录失败，检查是否需要改密
-                    account = await self._check_password_reset(
-                        account, client, email
+                    # Token登录失败，检查是否是认证/密码错误
+                    error_msg = str(e).lower()
+                    is_locked = (
+                        "密码" in error_msg or 
+                        "password" in error_msg or 
+                        "verify" in error_msg or 
+                        "验证" in error_msg or
+                        "authenticate" in error_msg or  # code 32
+                        "code\":32" in error_msg or
+                        '"code":32' in error_msg
                     )
+                    
+                    if is_locked:
+                        # 密码/认证错误，直接标记锁号，不检查找回密码邮箱
+                        account.status = AccountStatus.LOCKED.value
+                        account.status_message = f"密码验证失败: {str(e)[:100]}"
+                        account.checked_at = datetime.utcnow()
+                    else:
+                        # 其他错误，检查找回密码邮箱
+                        account = await self._check_password_reset(
+                            account, client, email
+                        )
             else:
                 # 没有cookie，检查找回密码邮箱
                 account = await self._check_password_reset(
@@ -503,7 +521,7 @@ class AccountService:
                 func.sum(
                     case(
                         (and_(
-                            TwitterAccount.follower_count >= min_val,
+                    TwitterAccount.follower_count >= min_val,
                             TwitterAccount.follower_count <= max_val
                         ), 1),
                         else_=0
@@ -512,8 +530,8 @@ class AccountService:
             )
         
         stmt = select(*case_conditions).select_from(TwitterAccount).where(
-            TwitterAccount.status == AccountStatus.NORMAL.value
-        )
+                    TwitterAccount.status == AccountStatus.NORMAL.value
+                )
         
         result = await self.db.execute(stmt)
         row = result.one()
@@ -610,7 +628,7 @@ class AccountService:
                 func.count(TwitterAccount.id).label('count')
             )
             .group_by(TwitterAccount.status)
-        )
+            )
         db_result = await self.db.execute(stmt)
         rows = db_result.all()
         
