@@ -12,6 +12,7 @@ config.py
 .vscode/
 *.swp
 *.swo
+config.py
 
 # 数据库
 *.db
