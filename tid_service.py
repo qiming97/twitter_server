@@ -22,6 +22,7 @@ TID_CONFIG = {
     "USER_AGENT": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1 Edg/141.0.0.0",
     "REFRESH_INTERVAL": 10,  # 页面刷新间隔(秒)
     "HEADLESS": True,
+    "USE_PROXY": False,  # TID 服务是否使用代理（默认不使用，因为只访问公开页面）
 }
 
 
@@ -246,9 +247,11 @@ class TIDService:
                     '--disable-blink-features=AutomationControlled',
                 ]
                 
-                # 如果有代理，配置代理
+                # 配置代理（默认不使用代理，因为 TID 只访问公开页面）
                 proxy_config = None
-                if self._current_proxy:
+                use_proxy = TID_CONFIG.get("USE_PROXY", False)
+                
+                if use_proxy and self._current_proxy:
                     proxy_info = self._parse_proxy_for_browser(self._current_proxy)
                     protocol = proxy_info.get('protocol', '')
                     host_port = proxy_info.get('host_port', '')
@@ -272,6 +275,8 @@ class TIDService:
                             proxy_config["username"] = proxy_info.get('username')
                             proxy_config["password"] = proxy_info.get('password')
                         logger.info(f"浏览器使用 HTTP 代理: {proxy_config.get('server')}")
+                else:
+                    logger.info("TID 浏览器不使用代理（直连模式）")
                 
                 if proxy_config:
                     browser = p.chromium.launch(
