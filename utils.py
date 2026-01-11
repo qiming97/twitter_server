@@ -197,31 +197,26 @@ def extract_visible_from_masked(masked_str: str) -> str:
     return result
 
 
-def parse_proxy(proxy_str: str, default_protocol: str = "http") -> Optional[str]:
+def parse_proxy(proxy_str: str, default_protocol: str = "socks5") -> Optional[str]:
     """
     解析代理字符串，支持多种格式：
     - host:port
-    - username:password@host:port  (IP2World 等格式)
+    - username:password@host:port
+    - username:password:host:port
     - http://... 或 socks5://... (完整URL格式)
-    
-    IP2World 格式示例:
-    x_yaseceo-zone-resi-region-jp:QQqq123123@ee982c1739054430.iuy.us.ip2world.vip:6001
     
     Args:
         proxy_str: 代理字符串
-        default_protocol: 默认协议 (http 或 socks5)，IP2World 住宅代理用 http
+        default_protocol: 默认协议，默认使用 socks5
     
-    注意: 
-    - IP2World 等住宅代理通常使用 HTTP 协议
-    - 如果需要 SOCKS5，请使用 socks5:// 前缀
-    - 不指定前缀时默认使用 http
+    返回格式化的代理URL
     """
     if not proxy_str or proxy_str.strip() == "":
         return None
     
     proxy_str = proxy_str.strip()
     
-    # 已经是完整URL格式
+    # 如果已经是完整的URL格式，保持原样
     if proxy_str.startswith('socks5h://'):
         return proxy_str.replace('socks5h://', 'socks5://', 1)
     if proxy_str.startswith('socks5://'):
@@ -229,30 +224,24 @@ def parse_proxy(proxy_str: str, default_protocol: str = "http") -> Optional[str]
     if proxy_str.startswith('http://') or proxy_str.startswith('https://'):
         return proxy_str
     
-    # 检测是否是 user:pass@host:port 格式 (IP2World 等)
-    if '@' in proxy_str:
-        # 格式: username:password@host:port
-        auth, location = proxy_str.rsplit('@', 1)
-        return f"{default_protocol}://{auth}@{location}"
-    
-    # 检测是否是 host:port:user:pass 格式
+    # 尝试解析 username:password:host:port 格式
+    # 默认使用 SOCKS5 代理
     parts = proxy_str.split(':')
+    
     if len(parts) == 4:
-        # 可能是 host:port:user:pass 或 user:pass:host:port
-        # 检查第2部分是否是端口号
-        if parts[1].isdigit():
-            # host:port:user:pass 格式
-            host, port, username, password = parts
-            return f"{default_protocol}://{username}:{password}@{host}:{port}"
-        else:
-            # user:pass:host:port 格式
-            username, password, host, port = parts
-            return f"{default_protocol}://{username}:{password}@{host}:{port}"
+        # username:password:host:port
+        username, password, host, port = parts
+        return f"{default_protocol}://{username}:{password}@{host}:{port}"
     elif len(parts) == 2:
-        # host:port 格式
+        # host:port
         host, port = parts
         return f"{default_protocol}://{host}:{port}"
+    elif '@' in proxy_str:
+        # username:password@host:port
+        auth, location = proxy_str.split('@', 1)
+        return f"{default_protocol}://{auth}@{location}"
     else:
+        # 无法识别的格式，直接返回
         return f"{default_protocol}://{proxy_str}"
 
 

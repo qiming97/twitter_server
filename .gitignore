@@ -19,7 +19,6 @@ config.py
 
 # 环境配置
 .env
-
 # 日志
 *.log
 logs/
