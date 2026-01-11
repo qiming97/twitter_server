@@ -246,10 +246,24 @@ class TIDService:
                     '--disable-blink-features=AutomationControlled',
                 ]
                 
-                # 如果有代理，添加代理参数
+                # 如果有代理，通过命令行参数配置（支持 SOCKS5）
+                proxy_config = None
                 if self._current_proxy:
-                    proxy_config = self._parse_proxy_for_browser(self._current_proxy)
-                    logger.info(f"浏览器使用代理: {proxy_config.get('server', 'N/A')}")
+                    proxy_info = self._parse_proxy_for_browser(self._current_proxy)
+                    proxy_server = proxy_info.get('server', '')
+                    
+                    # 检查是否是 SOCKS5 代理
+                    if 'socks5' in proxy_server.lower():
+                        # SOCKS5 代理通过命令行参数配置
+                        # 格式: --proxy-server=socks5://host:port
+                        launch_args.append(f'--proxy-server={proxy_server}')
+                        logger.info(f"浏览器使用 SOCKS5 代理 (命令行): {proxy_server}")
+                    else:
+                        # HTTP/HTTPS 代理可以使用 Playwright 原生支持
+                        proxy_config = proxy_info
+                        logger.info(f"浏览器使用代理: {proxy_server}")
+                
+                if proxy_config:
                     browser = p.chromium.launch(
                         channel="chrome",
                         headless=TID_CONFIG["HEADLESS"],
@@ -346,26 +360,37 @@ class TIDService:
         - socks5://host:port
         - http://user:pass@host:port
         - http://host:port
+        
+        注意：SOCKS5 代理通过命令行参数配置，认证信息会包含在 URL 中
         """
         if not proxy_str:
             return {}
         
-        proxy_config = {"server": proxy_str}
+        import re
         
         # 解析用户名和密码
         if '@' in proxy_str:
             # 格式: protocol://user:pass@host:port
-            import re
             match = re.match(r'(\w+)://([^:]+):([^@]+)@(.+)', proxy_str)
             if match:
                 protocol, username, password, server = match.groups()
-                proxy_config = {
-                    "server": f"{protocol}://{server}",
-                    "username": username,
-                    "password": password
-                }
+                
+                # 对于 SOCKS5，保持完整 URL（Chrome 命令行支持 socks5://user:pass@host:port）
+                if 'socks' in protocol.lower():
+                    return {
+                        "server": proxy_str,  # 保持完整 URL 包含认证信息
+                        "username": username,
+                        "password": password
+                    }
+                else:
+                    # HTTP/HTTPS 代理
+                    return {
+                        "server": f"{protocol}://{server}",
+                        "username": username,
+                        "password": password
+                    }
         
-        return proxy_config
+        return {"server": proxy_str}
 
 
 # 创建全局 TID 服务实例
