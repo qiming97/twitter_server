@@ -495,6 +495,12 @@ class TaskManager:
     async def _check_account_concurrent(self, acc_data: dict):
         """
         并发检测单个账号（使用独立的数据库 session）
+        
+        检测流程:
+        1. 检查账号是否冻结
+        2. 未冻结 -> Token登录获取完整信息 (accountData逻辑)
+        3. Token登录失败 -> 找回密码检查邮箱
+        4. 邮箱不匹配 -> 标记改密
         """
         # 检查暂停和停止
         await self._pause_event.wait()
@@ -511,7 +517,11 @@ class TaskManager:
         email = acc_data.get("email")
         
         try:
-            self.add_log("info", f"开始检测: @{username}")
+            # 🔍 开始检测
+            self.add_log("info", f"🔍 开始检测: @{username}")
+            self.add_log("info", f"   代理: {self.proxy or '无'}")
+            self.add_log("info", f"   Cookie: {'有 (' + str(len(cookie)) + ' chars)' if cookie else '无'}")
+            self.add_log("info", f"   邮箱: {email or '无'}")
             
             # 创建客户端
             client = TwitterClient(
@@ -521,7 +531,8 @@ class TaskManager:
             )
             client.username = username
             
-            # 1. 检测是否冻结
+            # ========== 步骤1: 检测账号状态 ==========
+            self.add_log("info", f"📋 @{username} 步骤1: 检测账号状态...")
             suspend_result = await client.check_account_suspended(username)
             
             # 使用独立的 session 更新数据库
@@ -539,7 +550,7 @@ class TaskManager:
                     account.status = "冻结"
                     account.status_message = "账号已冻结"
                     self.state.suspended_count += 1
-                    self.add_log("error", f"@{username} - 冻结")
+                    self.add_log("error", f"❌ @{username} 步骤1结果: 账号已冻结")
                     account.checked_at = datetime.utcnow()
                     self.state.processed_count += 1
                     await db.commit()
@@ -551,7 +562,7 @@ class TaskManager:
                     account.status = "错误"
                     account.status_message = error_msg
                     self.state.error_count += 1
-                    self.add_log("warning", f"@{username} - {error_msg[:200]}")
+                    self.add_log("warning", f"⚠️ @{username} 步骤1结果: 网络错误 - {error_msg[:100]}")
                     account.checked_at = datetime.utcnow()
                     self.state.processed_count += 1
                     await db.commit()
@@ -562,16 +573,19 @@ class TaskManager:
                     account.status = "错误"
                     account.status_message = "账号不存在"
                     self.state.error_count += 1
-                    self.add_log("error", f"@{username} - 账号不存在")
+                    self.add_log("error", f"❌ @{username} 步骤1结果: 账号不存在")
                     account.checked_at = datetime.utcnow()
                     self.state.processed_count += 1
                     await db.commit()
                     return
                 
-                # 2. 账号未冻结，使用Token登录获取完整信息
+                # 账号未冻结
+                self.add_log("success", f"✓ @{username} 步骤1结果: 账号正常存在")
+                
+                # ========== 步骤2: Token登录获取完整信息 ==========
                 if cookie:
+                    self.add_log("info", f"📋 @{username} 步骤2: Token登录获取完整信息 (accountData)...")
                     try:
-                        self.add_log("info", f"@{username} - Token登录获取信息...")
                         account_info = await client.account_data(password)
                         
                         # 更新账号信息
@@ -593,13 +607,20 @@ class TaskManager:
                         self.state.success_count += 1
                         
                         premium_str = "会员" if account.is_premium else "普通用户"
+                        self.add_log("success", f"✓ @{username} 步骤2结果: Token登录成功")
                         self.add_log("success", 
-                            f"@{username} - 正常 | 粉丝:{account.follower_count} | "
-                            f"国家:{account.country or '未知'} | 年份:{account.create_year or '未知'} | {premium_str}")
+                            f"✅ @{username} 检测完成: 正常 | 粉丝:{account.follower_count} | "
+                            f"关注:{account.following_count} | 国家:{account.country or '未知'} | "
+                            f"年份:{account.create_year or '未知'} | {premium_str}")
+                        
+                        account.checked_at = datetime.utcnow()
+                        self.state.processed_count += 1
+                        await db.commit()
+                        return
                         
                     except Exception as e:
                         error_msg = str(e).lower()
-                        self.add_log("warning", f"@{username} - Token登录失败: {str(e)[:200]}")
+                        self.add_log("warning", f"⚠️ @{username} 步骤2结果: Token登录失败 - {str(e)[:100]}")
                         
                         # 如果是密码验证错误或认证错误(code 32)，直接标记锁号
                         is_locked = (
@@ -617,14 +638,19 @@ class TaskManager:
                             account.status = "锁号"
                             account.status_message = f"密码验证失败: {str(e)[:100]}"
                             self.state.locked_count += 1
-                            self.add_log("warning", f"@{username} - 锁号(密码验证失败)")
-                        else:
-                            # 其他错误，检查找回密码邮箱
-                            await self._check_password_reset_email(account, client)
+                            self.add_log("warning", f"⚠️ @{username} 检测完成: 锁号(密码验证失败)")
+                            account.checked_at = datetime.utcnow()
+                            self.state.processed_count += 1
+                            await db.commit()
+                            return
+                        
+                        # 其他错误，继续步骤3检查找回密码邮箱
                 else:
-                    # 没有cookie，尝试检查找回密码邮箱
-                    self.add_log("info", f"@{username} - 无Cookie，检查找回密码邮箱...")
-                    await self._check_password_reset_email(account, client)
+                    self.add_log("warning", f"⚠️ @{username} 步骤2: 无Cookie，跳过Token登录")
+                
+                # ========== 步骤3: 检查找回密码邮箱 ==========
+                self.add_log("info", f"📋 @{username} 步骤3: 检查找回密码邮箱...")
+                await self._check_password_reset_email_with_steps(account, client, email)
                 
                 account.checked_at = datetime.utcnow()
                 self.state.processed_count += 1
@@ -644,7 +670,7 @@ class TaskManager:
             
             self.state.error_count += 1
             self.state.processed_count += 1
-            self.add_log("error", f"@{username} - 错误: {str(e)[:200]}")
+            self.add_log("error", f"❌ @{username} - 检测异常: {str(e)[:200]}")
     
     async def _check_account(self, db: AsyncSession, account: TwitterAccount):
         """
@@ -785,70 +811,81 @@ class TaskManager:
         self.state.error_count = 0
         self.add_log("info", "任务面板已清零")
     
-    async def _check_password_reset_email(self, account: TwitterAccount, client: TwitterClient):
+    async def _check_password_reset_email_with_steps(self, account: TwitterAccount, client: TwitterClient, expected_email: str = None):
         """
-        检查找回密码邮箱是否与账号绑定邮箱匹配
+        检查找回密码邮箱（带详细步骤日志）
         
         例: q2c716@tuitegmail.com 发送到 q2****@t*********.***
         如果不匹配则标记为"改密"
         """
         username = account.username
-        expected_email = account.email
+        expected_email = expected_email or account.email
         
         try:
-            self.add_log("info", f"@{username} - 检查找回密码邮箱...")
-            
             # 获取找回密码显示的脱敏邮箱 (带重试机制)
             email_result = await client.get_password_reset_email_hint(username)
             masked_email = email_result.get("email_hint") if email_result.get("success") else None
             
             # 显示重试信息
             if email_result.get("retry_count", 0) > 0:
-                self.add_log("info", f"@{username} - 重试了 {email_result.get('retry_count')} 次")
+                self.add_log("info", f"   @{username} (重试了 {email_result.get('retry_count')} 次)")
             
             if not masked_email:
                 # 区分网络错误和其他错误
                 if email_result.get("is_network_error") or "重试" in str(email_result.get("error", "")):
                     account.status = "错误"
-                    account.status_message = f"网络错误: {email_result.get('error', '未知')[:200]}"
+                    account.status_message = f"网络错误: {email_result.get('error', '未知')[:100]}"
                     self.state.error_count += 1
-                    self.add_log("error", f"@{username} - 网络错误: {email_result.get('error', '')[:200]}")
+                    self.add_log("error", f"⚠️ @{username} 步骤3结果: 网络错误 - {email_result.get('error', '')[:100]}")
                 else:
                     account.status = "改密"
                     account.status_message = email_result.get("error") or "无法获取找回密码邮箱提示"
                     self.state.reset_pwd_count += 1
-                    self.add_log("warning", f"@{username} - 改密({account.status_message[:100]})")
+                    self.add_log("warning", f"⚠️ @{username} 步骤3结果: 无法获取找回邮箱")
+                    self.add_log("warning", f"⚠️ @{username} 检测完成: 改密")
                 return
             
-            self.add_log("info", f"@{username} - 找回密码邮箱: {masked_email}")
+            self.add_log("info", f"   @{username} 找回密码显示邮箱: {masked_email}")
             
             if expected_email:
+                self.add_log("info", f"   @{username} 期望邮箱: {expected_email}")
+                
                 # 比较邮箱是否匹配
-                # 例: q2c716@tuitegmail.com 匹配 q2****@t*********.***
                 if utils.compare_masked_email(expected_email, masked_email):
-                    # 邮箱匹配，但Token登录失败，可能是其他原因
+                    # 邮箱匹配，但Token登录失败，需要改密
+                    self.add_log("success", f"   ✓ @{username} 邮箱匹配!")
                     account.status = "改密"
                     account.status_message = f"邮箱匹配({masked_email})，但登录失败需改密"
                     self.state.reset_pwd_count += 1
-                    self.add_log("warning", f"@{username} - 邮箱匹配但需改密: {masked_email}")
+                    self.add_log("warning", f"⚠️ @{username} 检测完成: 改密(邮箱匹配但登录失败)")
                 else:
                     # 邮箱不匹配，标记改密
+                    self.add_log("error", f"   ✗ @{username} 邮箱不匹配!")
                     account.status = "改密"
                     account.status_message = f"邮箱不匹配！期望:{expected_email}, 实际:{masked_email}"
                     self.state.reset_pwd_count += 1
-                    self.add_log("error", f"@{username} - 邮箱不匹配! 期望:{expected_email[:10]}..., 实际:{masked_email}")
+                    self.add_log("error", f"❌ @{username} 检测完成: 改密(邮箱不匹配)")
             else:
                 # 没有提供期望邮箱，直接标记为改密
                 account.status = "改密"
                 account.status_message = f"找回密码邮箱: {masked_email}"
                 self.state.reset_pwd_count += 1
-                self.add_log("warning", f"@{username} - 改密(找回邮箱:{masked_email})")
+                self.add_log("warning", f"⚠️ @{username} 检测完成: 改密(找回邮箱:{masked_email})")
                 
         except Exception as e:
             account.status = "错误"
-            account.status_message = f"检查找回密码失败: {str(e)[:200]}"
+            account.status_message = f"检查找回密码失败: {str(e)[:100]}"
             self.state.error_count += 1
-            self.add_log("error", f"@{username} - 检查找回密码失败: {str(e)[:200]}")
+            self.add_log("error", f"❌ @{username} 步骤3异常: {str(e)[:100]}")
+
+    async def _check_password_reset_email(self, account: TwitterAccount, client: TwitterClient):
+        """
+        检查找回密码邮箱是否与账号绑定邮箱匹配（兼容旧调用）
+        
+        例: q2c716@tuitegmail.com 发送到 q2****@t*********.***
+        如果不匹配则标记为"改密"
+        """
+        await self._check_password_reset_email_with_steps(account, client, account.email)
 
 
 # 全局任务管理器实例
