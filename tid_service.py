@@ -21,7 +21,7 @@ TID_CONFIG = {
     "TWITTER_URL": "https://x.com/elonmusk",
     "USER_AGENT": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1 Edg/141.0.0.0",
     "REFRESH_INTERVAL": 10,  # 页面刷新间隔(秒)
-    "HEADLESS": True,
+    "HEADLESS": False,
     "USE_PROXY": False,  # TID 服务是否使用代理（默认不使用，因为只访问公开页面）
 }
 
