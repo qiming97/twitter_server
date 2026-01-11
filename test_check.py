@@ -264,10 +264,7 @@ async def check_single_account(
         
         if verbose:
             print_colored(f"\n🔍 开始检测账号: @{username}", "cyan")
-            print(f"   代理: {parsed_proxy or '无'}")
             print(f"   密码: {password[:5]}***" if password else "   密码: 无")
-            print(f"   Cookie: {'有 (' + str(len(cookie)) + ' chars)' if cookie else '无'}")
-            print(f"   邮箱: {email or '无'}")
         
         # 创建客户端
         client = TwitterClient(

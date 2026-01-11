@@ -497,10 +497,9 @@ class TaskManager:
         并发检测单个账号（使用独立的数据库 session）
         
         检测流程:
-        1. 检查账号是否冻结
-        2. 未冻结 -> Token登录获取完整信息 (accountData逻辑)
-        3. Token登录失败 -> 找回密码检查邮箱
-        4. 邮箱不匹配 -> 标记改密
+        1. Token登录获取完整信息 (accountData逻辑)，同时检测冻结状态
+        2. Token登录失败 -> 找回密码检查邮箱
+        3. 邮箱不匹配 -> 标记改密
         """
         # 检查暂停和停止
         await self._pause_event.wait()
@@ -519,10 +518,7 @@ class TaskManager:
         try:
             # 🔍 开始检测
             self.add_log("info", f"🔍 开始检测: @{username}")
-            self.add_log("info", f"   代理: {self.proxy or '无'}")
-            self.add_log("info", f"   Cookie: {'有 (' + str(len(cookie)) + ' chars)' if cookie else '无'}")
-            self.add_log("info", f"   邮箱: {email or '无'}")
-            
+       
             # 创建客户端
             client = TwitterClient(
                 cookie=cookie or "",
@@ -530,10 +526,6 @@ class TaskManager:
                 password=password
             )
             client.username = username
-            
-            # ========== 步骤1: 检测账号状态 ==========
-            self.add_log("info", f"📋 @{username} 步骤1: 检测账号状态...")
-            suspend_result = await client.check_account_suspended(username)
             
             # 使用独立的 session 更新数据库
             async with async_session() as db:
@@ -546,45 +538,9 @@ class TaskManager:
                     self.add_log("error", f"@{username} - 账号记录不存在")
                     return
                 
-                if suspend_result.get("suspended"):
-                    account.status = "冻结"
-                    account.status_message = "账号已冻结"
-                    self.state.suspended_count += 1
-                    self.add_log("error", f"❌ @{username} 步骤1结果: 账号已冻结")
-                    account.checked_at = datetime.utcnow()
-                    self.state.processed_count += 1
-                    await db.commit()
-                    return
-                
-                # 检查是否是网络错误 (exists 为 None)
-                if suspend_result.get("error") and suspend_result.get("exists") is None:
-                    error_msg = suspend_result.get("message", "网络错误")
-                    account.status = "错误"
-                    account.status_message = error_msg
-                    self.state.error_count += 1
-                    self.add_log("warning", f"⚠️ @{username} 步骤1结果: 网络错误 - {error_msg[:100]}")
-                    account.checked_at = datetime.utcnow()
-                    self.state.processed_count += 1
-                    await db.commit()
-                    return
-                
-                # 账号不存在 (exists 明确为 False)
-                if suspend_result.get("exists") is False:
-                    account.status = "错误"
-                    account.status_message = "账号不存在"
-                    self.state.error_count += 1
-                    self.add_log("error", f"❌ @{username} 步骤1结果: 账号不存在")
-                    account.checked_at = datetime.utcnow()
-                    self.state.processed_count += 1
-                    await db.commit()
-                    return
-                
-                # 账号未冻结
-                self.add_log("success", f"✓ @{username} 步骤1结果: 账号正常存在")
-                
-                # ========== 步骤2: Token登录获取完整信息 ==========
+                # ========== 步骤1: Token登录获取完整信息（同时检测冻结） ==========
                 if cookie:
-                    self.add_log("info", f"📋 @{username} 步骤2: Token登录获取完整信息 (accountData)...")
+                    self.add_log("info", f"📋 @{username} 步骤1: Token登录获取完整信息...")
                     try:
                         account_info = await client.account_data(password)
                         
@@ -607,7 +563,7 @@ class TaskManager:
                         self.state.success_count += 1
                         
                         premium_str = "会员" if account.is_premium else "普通用户"
-                        self.add_log("success", f"✓ @{username} 步骤2结果: Token登录成功")
+                        self.add_log("success", f"✓ @{username} 步骤1结果: Token登录成功")
                         self.add_log("success", 
                             f"✅ @{username} 检测完成: 正常 | 粉丝:{account.follower_count} | "
                             f"关注:{account.following_count} | 国家:{account.country or '未知'} | "
@@ -620,7 +576,42 @@ class TaskManager:
                         
                     except Exception as e:
                         error_msg = str(e).lower()
-                        self.add_log("warning", f"⚠️ @{username} 步骤2结果: Token登录失败 - {str(e)[:100]}")
+                        original_error = str(e)
+                        self.add_log("warning", f"⚠️ @{username} 步骤1结果: Token登录失败 - {original_error[:100]}")
+                        
+                        # 检测是否冻结 (suspended)
+                        is_suspended = (
+                            "suspend" in error_msg or
+                            "冻结" in error_msg or
+                            "userunavailable" in error_msg
+                        )
+                        
+                        if is_suspended:
+                            account.status = "冻结"
+                            account.status_message = "账号已冻结"
+                            self.state.suspended_count += 1
+                            self.add_log("error", f"❌ @{username} 检测完成: 账号已冻结")
+                            account.checked_at = datetime.utcnow()
+                            self.state.processed_count += 1
+                            await db.commit()
+                            return
+                        
+                        # 检测账号是否不存在
+                        is_not_exist = (
+                            "不存在" in error_msg or
+                            "not found" in error_msg or
+                            "user not found" in error_msg
+                        )
+                        
+                        if is_not_exist:
+                            account.status = "错误"
+                            account.status_message = "账号不存在"
+                            self.state.error_count += 1
+                            self.add_log("error", f"❌ @{username} 检测完成: 账号不存在")
+                            account.checked_at = datetime.utcnow()
+                            self.state.processed_count += 1
+                            await db.commit()
+                            return
                         
                         # 如果是密码验证错误或认证错误(code 32)，直接标记锁号
                         is_locked = (
@@ -636,7 +627,7 @@ class TaskManager:
                         
                         if is_locked:
                             account.status = "锁号"
-                            account.status_message = f"密码验证失败: {str(e)[:100]}"
+                            account.status_message = f"密码验证失败: {original_error[:100]}"
                             self.state.locked_count += 1
                             self.add_log("warning", f"⚠️ @{username} 检测完成: 锁号(密码验证失败)")
                             account.checked_at = datetime.utcnow()
@@ -644,12 +635,12 @@ class TaskManager:
                             await db.commit()
                             return
                         
-                        # 其他错误，继续步骤3检查找回密码邮箱
+                        # 其他错误，继续步骤2检查找回密码邮箱
                 else:
-                    self.add_log("warning", f"⚠️ @{username} 步骤2: 无Cookie，跳过Token登录")
+                    self.add_log("warning", f"⚠️ @{username} 步骤1: 无Cookie，跳过Token登录")
                 
-                # ========== 步骤3: 检查找回密码邮箱 ==========
-                self.add_log("info", f"📋 @{username} 步骤3: 检查找回密码邮箱...")
+                # ========== 步骤2: 检查找回密码邮箱 ==========
+                self.add_log("info", f"📋 @{username} 步骤2: 检查找回密码邮箱...")
                 await self._check_password_reset_email_with_steps(account, client, email)
                 
                 account.checked_at = datetime.utcnow()
@@ -677,10 +668,9 @@ class TaskManager:
         检测单个账号
         
         流程:
-        1. 检查账号是否冻结
-        2. 未冻结 -> Token登录获取完整信息 (accountData逻辑)
-        3. Token登录失败 -> 找回密码检查邮箱
-        4. 邮箱不匹配 -> 标记改密
+        1. Token登录获取完整信息 (accountData逻辑)，同时检测冻结状态
+        2. Token登录失败 -> 找回密码检查邮箱
+        3. 邮箱不匹配 -> 标记改密
         
         返回格式: 用户名----密码----2FA----邮箱----邮箱密码----粉丝数量----国家----年份----是否会员
         """
@@ -698,40 +688,7 @@ class TaskManager:
             )
             client.username = username
             
-            # 1. 检测是否冻结
-            suspend_result = await client.check_account_suspended(username)
-            
-            if suspend_result.get("suspended"):
-                account.status = "冻结"
-                account.status_message = "账号已冻结"
-                self.state.suspended_count += 1
-                self.add_log("error", f"@{username} - 冻结")
-                account.checked_at = datetime.utcnow()
-                self.state.processed_count += 1
-                return
-            
-            # 检查是否是网络错误 (exists 为 None)
-            if suspend_result.get("error") and suspend_result.get("exists") is None:
-                error_msg = suspend_result.get("message", "网络错误")
-                account.status = "错误"
-                account.status_message = error_msg
-                self.state.error_count += 1
-                self.add_log("warning", f"@{username} - {error_msg[:200]}")
-                account.checked_at = datetime.utcnow()
-                self.state.processed_count += 1
-                return
-            
-            # 账号不存在 (exists 明确为 False)
-            if suspend_result.get("exists") is False:
-                account.status = "错误"
-                account.status_message = "账号不存在"
-                self.state.error_count += 1
-                self.add_log("error", f"@{username} - 账号不存在")
-                account.checked_at = datetime.utcnow()
-                self.state.processed_count += 1
-                return
-            
-            # 2. 账号未冻结，使用Token登录获取完整信息
+            # 1. 使用Token登录获取完整信息（同时检测冻结状态）
             if account.cookie:
                 try:
                     # 使用 accountData 逻辑获取完整信息
@@ -764,23 +721,56 @@ class TaskManager:
                     
                 except Exception as e:
                     error_msg = str(e).lower()
-                    self.add_log("warning", f"@{username} - Token登录失败: {str(e)[:200]}")
+                    original_error = str(e)
+                    self.add_log("warning", f"@{username} - Token登录失败: {original_error[:200]}")
                     
-                    # 如果是密码验证错误或认证错误(code 32)，直接标记锁号，不需要找回密码邮箱验证
+                    # 检测是否冻结 (suspended)
+                    is_suspended = (
+                        "suspend" in error_msg or
+                        "冻结" in error_msg or
+                        "userunavailable" in error_msg
+                    )
+                    
+                    if is_suspended:
+                        account.status = "冻结"
+                        account.status_message = "账号已冻结"
+                        self.state.suspended_count += 1
+                        self.add_log("error", f"@{username} - 冻结")
+                        account.checked_at = datetime.utcnow()
+                        self.state.processed_count += 1
+                        return
+                    
+                    # 检测账号是否不存在
+                    is_not_exist = (
+                        "不存在" in error_msg or
+                        "not found" in error_msg or
+                        "user not found" in error_msg
+                    )
+                    
+                    if is_not_exist:
+                        account.status = "错误"
+                        account.status_message = "账号不存在"
+                        self.state.error_count += 1
+                        self.add_log("error", f"@{username} - 账号不存在")
+                        account.checked_at = datetime.utcnow()
+                        self.state.processed_count += 1
+                        return
+                    
+                    # 如果是密码验证错误或认证错误(code 32)，直接标记锁号
                     is_locked = (
                         "密码" in error_msg or 
                         "password" in error_msg or 
                         "verify" in error_msg or 
                         "验证" in error_msg or
-                        "authenticate" in error_msg or  # code 32: Could not authenticate you
-                        "code\":32" in error_msg or     # 错误码 32
+                        "authenticate" in error_msg or
+                        "code\":32" in error_msg or
                         '"code":32' in error_msg or
                         "code: 32" in error_msg
                     )
                     
                     if is_locked:
                         account.status = "锁号"
-                        account.status_message = f"密码验证失败: {str(e)[:100]}"
+                        account.status_message = f"密码验证失败: {original_error[:100]}"
                         self.state.locked_count += 1
                         self.add_log("warning", f"@{username} - 锁号(密码验证失败)")
                     else:
@@ -836,12 +826,12 @@ class TaskManager:
                     account.status = "错误"
                     account.status_message = f"网络错误: {email_result.get('error', '未知')[:100]}"
                     self.state.error_count += 1
-                    self.add_log("error", f"⚠️ @{username} 步骤3结果: 网络错误 - {email_result.get('error', '')[:100]}")
+                    self.add_log("error", f"⚠️ @{username} 步骤2结果: 网络错误 - {email_result.get('error', '')[:100]}")
                 else:
                     account.status = "改密"
                     account.status_message = email_result.get("error") or "无法获取找回密码邮箱提示"
                     self.state.reset_pwd_count += 1
-                    self.add_log("warning", f"⚠️ @{username} 步骤3结果: 无法获取找回邮箱")
+                    self.add_log("warning", f"⚠️ @{username} 步骤2结果: 无法获取找回邮箱")
                     self.add_log("warning", f"⚠️ @{username} 检测完成: 改密")
                 return
             
@@ -876,7 +866,7 @@ class TaskManager:
             account.status = "错误"
             account.status_message = f"检查找回密码失败: {str(e)[:100]}"
             self.state.error_count += 1
-            self.add_log("error", f"❌ @{username} 步骤3异常: {str(e)[:100]}")
+            self.add_log("error", f"❌ @{username} 步骤2异常: {str(e)[:100]}")
 
     async def _check_password_reset_email(self, account: TwitterAccount, client: TwitterClient):
         """
