@@ -246,22 +246,32 @@ class TIDService:
                     '--disable-blink-features=AutomationControlled',
                 ]
                 
-                # 如果有代理，通过命令行参数配置（支持 SOCKS5）
+                # 如果有代理，配置代理
                 proxy_config = None
                 if self._current_proxy:
                     proxy_info = self._parse_proxy_for_browser(self._current_proxy)
-                    proxy_server = proxy_info.get('server', '')
+                    protocol = proxy_info.get('protocol', '')
+                    host_port = proxy_info.get('host_port', '')
+                    has_auth = bool(proxy_info.get('username'))
                     
                     # 检查是否是 SOCKS5 代理
-                    if 'socks5' in proxy_server.lower():
-                        # SOCKS5 代理通过命令行参数配置
-                        # 格式: --proxy-server=socks5://host:port
-                        launch_args.append(f'--proxy-server={proxy_server}')
-                        logger.info(f"浏览器使用 SOCKS5 代理 (命令行): {proxy_server}")
+                    if 'socks' in protocol:
+                        # SOCKS5 通过命令行参数配置（不支持认证）
+                        proxy_arg = f'socks5://{host_port}'
+                        launch_args.append(f'--proxy-server={proxy_arg}')
+                        if has_auth:
+                            logger.warning(f"SOCKS5 代理认证在浏览器中不支持，使用无认证模式: {proxy_arg}")
+                        else:
+                            logger.info(f"浏览器使用 SOCKS5 代理: {proxy_arg}")
                     else:
                         # HTTP/HTTPS 代理可以使用 Playwright 原生支持
-                        proxy_config = proxy_info
-                        logger.info(f"浏览器使用代理: {proxy_server}")
+                        proxy_config = {
+                            "server": proxy_info.get('server', self._current_proxy)
+                        }
+                        if has_auth:
+                            proxy_config["username"] = proxy_info.get('username')
+                            proxy_config["password"] = proxy_info.get('password')
+                        logger.info(f"浏览器使用 HTTP 代理: {proxy_config.get('server')}")
                 
                 if proxy_config:
                     browser = p.chromium.launch(
@@ -361,36 +371,52 @@ class TIDService:
         - http://user:pass@host:port
         - http://host:port
         
-        注意：SOCKS5 代理通过命令行参数配置，认证信息会包含在 URL 中
+        返回:
+        {
+            "server": "protocol://host:port",
+            "username": "user" (可选),
+            "password": "pass" (可选),
+            "protocol": "socks5" 或 "http",
+            "host_port": "host:port"
+        }
         """
         if not proxy_str:
             return {}
         
         import re
         
+        result = {"server": proxy_str}
+        
+        # 检测协议
+        protocol_match = re.match(r'^(\w+)://', proxy_str)
+        if protocol_match:
+            result["protocol"] = protocol_match.group(1).lower()
+        
         # 解析用户名和密码
         if '@' in proxy_str:
             # 格式: protocol://user:pass@host:port
             match = re.match(r'(\w+)://([^:]+):([^@]+)@(.+)', proxy_str)
             if match:
-                protocol, username, password, server = match.groups()
-                
-                # 对于 SOCKS5，保持完整 URL（Chrome 命令行支持 socks5://user:pass@host:port）
-                if 'socks' in protocol.lower():
-                    return {
-                        "server": proxy_str,  # 保持完整 URL 包含认证信息
-                        "username": username,
-                        "password": password
-                    }
-                else:
-                    # HTTP/HTTPS 代理
-                    return {
-                        "server": f"{protocol}://{server}",
-                        "username": username,
-                        "password": password
-                    }
+                protocol, username, password, host_port = match.groups()
+                result = {
+                    "server": f"{protocol}://{host_port}",  # 不含认证信息的 URL
+                    "username": username,
+                    "password": password,
+                    "protocol": protocol.lower(),
+                    "host_port": host_port
+                }
+        else:
+            # 格式: protocol://host:port
+            match = re.match(r'(\w+)://(.+)', proxy_str)
+            if match:
+                protocol, host_port = match.groups()
+                result = {
+                    "server": proxy_str,
+                    "protocol": protocol.lower(),
+                    "host_port": host_port
+                }
         
-        return {"server": proxy_str}
+        return result
 
 
 # 创建全局 TID 服务实例
