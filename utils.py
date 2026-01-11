@@ -72,7 +72,7 @@ def get_tid(path: str) -> str:
         from tid_service import get_tid_service
         tid_service = get_tid_service()
         
-        if tid_service.is_running and tid_service.browser_ready.is_set():
+        if tid_service.is_running and tid_service.browser_ready:
             tid = tid_service.get_tid(path)
             if tid:
                 return tid
