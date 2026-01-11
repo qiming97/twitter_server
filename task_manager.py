@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import async_session
 from models import TwitterAccount, TaskConfig
 from twitter_client import TwitterClient
+from tid_service import get_tid_service
 import utils
 
 
@@ -229,6 +230,20 @@ class TaskManager:
                 self._pause_event.set()
                 self.state.status = TaskStatus.RUNNING
                 
+                # 启动 TID 服务（使用保存的代理）
+                try:
+                    tid_service = get_tid_service()
+                    await tid_service.start(proxy=self.proxy)
+                    self.add_log("info", "TID 服务启动中...")
+                    
+                    # 等待 TID 服务就绪
+                    if await tid_service.wait_ready(timeout=30.0):
+                        self.add_log("success", "TID 服务已就绪")
+                    else:
+                        self.add_log("warning", "TID 服务启动超时，将使用外部 TID 服务")
+                except Exception as e:
+                    self.add_log("warning", f"TID 服务启动失败: {str(e)[:100]}")
+                
                 # 启动后台任务
                 self._task = asyncio.create_task(self._run_task())
                 
@@ -305,6 +320,20 @@ class TaskManager:
             
             self.add_log("info", f"任务启动，代理: {self.proxy or '无'}, 并发: {self.concurrency}")
             
+            # 启动 TID 服务（使用相同的代理）
+            try:
+                tid_service = get_tid_service()
+                await tid_service.start(proxy=self.proxy)
+                self.add_log("info", "TID 服务启动中...")
+                
+                # 等待 TID 服务就绪（最多等待30秒）
+                if await tid_service.wait_ready(timeout=30.0):
+                    self.add_log("success", "TID 服务已就绪")
+                else:
+                    self.add_log("warning", "TID 服务启动超时，将使用外部 TID 服务")
+            except Exception as e:
+                self.add_log("warning", f"TID 服务启动失败: {str(e)[:100]}，将使用外部 TID 服务")
+            
             # 保存状态到数据库
             await self.save_state_to_db()
             
@@ -349,6 +378,14 @@ class TaskManager:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        
+        # 停止 TID 服务
+        try:
+            tid_service = get_tid_service()
+            await tid_service.stop()
+            self.add_log("info", "TID 服务已停止")
+        except Exception as e:
+            self.add_log("warning", f"停止 TID 服务时出错: {str(e)[:50]}")
         
         self.state.status = TaskStatus.STOPPED
         self.add_log("error", "任务已停止")
@@ -406,6 +443,15 @@ class TaskManager:
                     if not accounts:
                         self.state.status = TaskStatus.COMPLETED
                         self.add_log("success", "所有账号检测完成")
+                        
+                        # 停止 TID 服务
+                        try:
+                            tid_service = get_tid_service()
+                            await tid_service.stop()
+                            self.add_log("info", "TID 服务已停止")
+                        except Exception as e:
+                            pass
+                        
                         await self.save_state_to_db()
                         # 检测完成后清零任务面板统计（数据库中的账号数据保持不变）
                         await self._reset_panel_stats()

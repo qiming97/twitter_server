@@ -692,6 +692,18 @@ async def clear_all_accounts(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== TID 服务状态 ====================
+
+from tid_service import get_tid_service
+
+
+@app.get("/api/tid/status", response_model=ApiResponse, tags=["TID服务"])
+async def get_tid_status():
+    """获取 TID 服务状态"""
+    tid_service = get_tid_service()
+    return ApiResponse(success=True, data=tid_service.get_status())
+
+
 # ==================== 健康检查 ====================
 
 @app.get("/health", tags=["系统"])

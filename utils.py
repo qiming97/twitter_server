@@ -62,7 +62,25 @@ def extract_cookies_from_dict(cookies: dict) -> str:
 
 
 def get_tid(path: str) -> str:
-    """获取 Twitter Transaction ID"""
+    """
+    获取 Twitter Transaction ID
+    
+    优先使用内嵌的 TID 服务，如果未启动则回退到外部服务
+    """
+    # 优先尝试使用内嵌的 TID 服务
+    try:
+        from tid_service import get_tid_service
+        tid_service = get_tid_service()
+        
+        if tid_service.is_running and tid_service.browser_ready.is_set():
+            tid = tid_service.get_tid(path)
+            if tid:
+                return tid
+    except Exception as e:
+        # 内嵌服务不可用，继续尝试外部服务
+        pass
+    
+    # 回退到外部 TID 服务
     url = settings.TID_SERVICE_URL
     payload = {"path": path}
     headers = {"content-type": "application/json"}
