@@ -94,6 +94,14 @@ const TaskPage = {
               🧹 清空统计
             </button>
             <button 
+              class="btn btn-sm btn-error" 
+              @click="confirmClearPending"
+              :disabled="actionLoading || !taskStatus || taskStatus.pending_count === 0"
+              title="删除待检测账号，保留已检测过的账号"
+            >
+              🗑️ 清空数据
+            </button>
+            <button 
               class="btn btn-sm btn-warning" 
               @click="confirmResetStatus"
               :disabled="actionLoading || !taskStatus || taskStatus.total_count === 0"
@@ -439,6 +447,31 @@ const TaskPage = {
       this.actionLoading = false
     },
     
+    // 清空待检测账号数据（保留已检测过的账号）
+    async confirmClearPending() {
+      const count = this.taskStatus?.pending_count || 0
+      const confirmed = await Modal.warning(
+        `确定要删除所有 <strong>${count}</strong> 个待检测账号吗？<br><br>此操作将：<br>• 删除所有"待检测"状态的账号<br>• 保留已检测过的账号（正常、冻结、改密等）<br><br><span style="color:#ef4444">此操作不可撤销！</span>`,
+        '清空数据'
+      )
+      if (!confirmed) return
+      
+      this.actionLoading = true
+      try {
+        const res = await API.clearPendingAccounts()
+        if (res.success) {
+          Toast.success(res.message || '待检测账号已清空')
+          this.addLocalLog('warning', `已删除 ${res.data?.count || count} 个待检测账号`)
+          this.fetchStatus()
+        } else {
+          Toast.error(res.message)
+        }
+      } catch (e) {
+        Toast.error('清空失败: ' + e.message)
+      }
+      this.actionLoading = false
+    },
+    
     addLocalLog(level, message) {
       const now = new Date()
       const time = now.toLocaleTimeString('zh-CN', { hour12: false })
@@ -555,6 +588,7 @@ const taskStyles = `
   }
   .danger-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 16px;
     padding-top: 12px;
@@ -562,6 +596,7 @@ const taskStyles = `
   }
   .danger-actions .btn {
     flex: 1;
+    min-width: 100px;
   }
   .status-badge {
     display: inline-flex;

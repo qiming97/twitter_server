@@ -167,6 +167,11 @@ const API = {
     return this.post('/api/accounts/clear')
   },
 
+  // 清空待检测账号（保留已检测过的账号）
+  clearPendingAccounts() {
+    return this.post('/api/accounts/clear-pending')
+  },
+
   // 删除单个账号
   deleteAccount(id) {
     return this.request('DELETE', `/api/accounts/${id}`)

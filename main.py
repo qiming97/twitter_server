@@ -692,6 +692,29 @@ async def clear_all_accounts(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/accounts/clear-pending", response_model=ApiResponse, tags=["账号管理"])
+async def clear_pending_accounts(db: AsyncSession = Depends(get_db)):
+    """
+    清空待检测的账号（保留已检测过的账号）
+    """
+    from sqlalchemy import delete
+    
+    try:
+        stmt = delete(TwitterAccount).where(TwitterAccount.status == AccountStatus.PENDING.value)
+        result = await db.execute(stmt)
+        await db.commit()
+        
+        count = result.rowcount
+        return ApiResponse(
+            success=True,
+            message=f"已删除 {count} 个待检测账号",
+            data={"count": count}
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== TID 服务状态 ====================
 
 from tid_service import get_tid_service
