@@ -48,7 +48,7 @@ from utils import parse_proxy, compare_masked_email
 
 # ============ 固定配置 ============
 # 远程代理
-REMOTE_PROXY = "x_yaseceo-zone-resi-region-jp:QQqq123123@ee982c1739054430.iuy.us.ip2world.vip:6001"
+REMOTE_PROXY = "yaseceo-zone-resi-region-jp:QQqq123123@c80c7039cc4c3ee5.yiu.us.ip2world.vip:6001"
 # macOS 本地代理 (Clash等)
 LOCAL_PROXY = "127.0.0.1:7897"
 
