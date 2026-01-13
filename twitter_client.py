@@ -675,6 +675,142 @@ class TwitterClient:
         """执行检查账号冻结状态 (在线程池中执行避免阻塞)"""
         return await asyncio.to_thread(self._do_check_account_suspended_sync, username)
     
+    async def check_suspended_with_session(self, username: str, max_retries: int = 3) -> Dict[str, Any]:
+        """
+        使用当前账号的session检查账号是否被冻结 (带网络重试机制)
+        
+        返回:
+        {
+            "suspended": bool,  # 是否冻结
+            "exists": bool,     # 账号是否存在
+            "message": str      # 详细信息
+        }
+        """
+        last_error = None
+        
+        for attempt in range(max_retries):
+            if attempt > 0:
+                wait_time = random.uniform(1.0, 2.0)
+                await asyncio.sleep(wait_time)
+            
+            try:
+                # 使用 get_user_info 相同的接口，但解析返回判断是否冻结
+                url = "https://api.x.com/graphql/-oaLodhGbbnzJBACb1kk2Q/UserByScreenName"
+                tid = utils.get_tid("/graphql/-oaLodhGbbnzJBACb1kk2Q/UserByScreenName")
+                
+                headers = dict(self.graphql_headers)
+                headers.update({
+                    "referer": f"https://x.com/{username}",
+                    "x-csrf-token": self.csrf_token,
+                    "x-client-transaction-id": tid,
+                })
+                
+                params = {
+                    "variables": json.dumps({
+                        "screen_name": username,
+                        "withSafetyModeUserFields": True
+                    }),
+                    "features": json.dumps({
+                        "hidden_profile_likes_enabled": True,
+                        "hidden_profile_subscriptions_enabled": True,
+                        "responsive_web_graphql_exclude_directive_enabled": True,
+                        "verified_phone_label_enabled": False,
+                        "responsive_web_profile_redirect_enabled": False,
+                        "subscriptions_verification_info_is_identity_verified_enabled": True,
+                        "subscriptions_verification_info_verified_since_enabled": True,
+                        "subscriptions_feature_can_gift_premium": True,
+                        "rweb_tipjar_consumption_enabled": True,
+                        "profile_label_improvements_pcf_label_in_post_enabled": True,
+                        "highlights_tweets_tab_ui_enabled": True,
+                        "responsive_web_twitter_article_notes_tab_enabled": True,
+                        "creator_subscriptions_tweet_preview_api_enabled": True,
+                        "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+                        "responsive_web_graphql_timeline_navigation_enabled": True
+                    }),
+                    "fieldToggles": json.dumps({
+                        "withAuxiliaryUserLabels": False
+                    }),
+                }
+                
+                response = await self._send(url, headers=headers, params=params, method="GET")
+                
+                # 处理 Rate limit
+                if response.status_code == 429 or "rate limit" in response.text.lower():
+                    last_error = "请求被限流(Rate limit)"
+                    continue
+                
+                if response.status_code == 404:
+                    last_error = "请求返回404"
+                    continue
+                
+                resp_json = response.json()
+                data = resp_json.get('data', {})
+                
+                # 情况1: user 为 null -> 账号被冻结
+                user_data = data.get('user') if data else None
+                if data is not None and 'user' in data and user_data is None:
+                    return {
+                        "suspended": True,
+                        "exists": True,
+                        "message": "账号已被冻结"
+                    }
+                
+                # 如果 data 为空或没有 user 字段
+                if not data or 'user' not in data:
+                    last_error = "API返回数据异常"
+                    continue
+                
+                result = data.get('user', {}).get('result', {})
+                typename = result.get('__typename', '')
+                
+                # 情况2: UserUnavailable -> 检查是否冻结
+                if typename == 'UserUnavailable':
+                    reason = result.get('reason', '')
+                    message = result.get('message', '')
+                    if reason == 'Suspended' or 'suspended' in message.lower():
+                        return {
+                            "suspended": True,
+                            "exists": True,
+                            "message": "账号已被冻结"
+                        }
+                    else:
+                        return {
+                            "suspended": False,
+                            "exists": None,
+                            "error": True,
+                            "message": f"账号不可用: {reason or message}"
+                        }
+                
+                # 情况3: User -> 账号正常
+                if typename == 'User':
+                    return {
+                        "suspended": False,
+                        "exists": True,
+                        "message": "账号正常"
+                    }
+                
+                last_error = f"未知状态: {typename}"
+                
+            except Exception as e:
+                error_msg = str(e)
+                last_error = error_msg
+                if self.is_network_error(error_msg):
+                    continue
+                else:
+                    return {
+                        "suspended": False,
+                        "exists": None,
+                        "error": True,
+                        "message": f"检查失败: {error_msg[:100]}"
+                    }
+        
+        return {
+            "suspended": False,
+            "exists": None,
+            "error": True,
+            "message": f"重试{max_retries}次后仍失败: {last_error}"
+        }
+    
     async def get_user_info(self, username: str) -> Dict[str, Any]:
         """获取用户详细信息"""
         url = "https://api.x.com/graphql/-oaLodhGbbnzJBACb1kk2Q/UserByScreenName"
