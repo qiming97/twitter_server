@@ -390,7 +390,7 @@ async def check_single_account(
             print(f"   使用代理: {parsed_proxy or '无'}")
         
         try:
-            email_result = await client.get_password_reset_email_hint(username)
+            email_result = await client.get_password_reset_email_hint(username, email)
             masked_email = email_result.get("email_hint") if email_result.get("success") else None
             
             if verbose:

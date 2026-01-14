@@ -831,7 +831,7 @@ class TaskManager:
         
         try:
             # 获取找回密码显示的脱敏邮箱 (带重试机制)
-            email_result = await client.get_password_reset_email_hint(username)
+            email_result = await client.get_password_reset_email_hint(username, expected_email)
             masked_email = email_result.get("email_hint") if email_result.get("success") else None
             
             # 显示重试信息
