@@ -1054,7 +1054,7 @@ class TwitterClient:
         
         return resp_json
     
-    async def get_password_reset_email_hint(self, username: str = None, max_retries: int = 3) -> Dict[str, Any]:
+    async def get_password_reset_email_hint(self, username: str = None, email: str = None, max_retries: int = 3) -> Dict[str, Any]:
         """
         获取找回密码时显示的脱敏邮箱 (带重试机制)
         参考: https://github.com/fa0311/TwitterFrontendFlow/blob/master/sample.py
@@ -1064,7 +1064,8 @@ class TwitterClient:
         2. password_reset_flow - 发起流程
         3. PwrJsInstrumentationSubtask - JS instrumentation
         4. PasswordResetBegin - 输入用户名
-        5. PasswordResetChooseChallenge - 提取邮箱选项
+        5. PwrKnowledgeChallenge - 邮箱验证 (如果出现，需要提供email参数)
+        6. PasswordResetChooseChallenge - 提取邮箱选项
         
         返回: {
             "success": bool,
@@ -1082,7 +1083,7 @@ class TwitterClient:
         for retry in range(max_retries):
             reset_session = None
             try:
-                result = await self._do_password_reset_email_hint(username)
+                result = await self._do_password_reset_email_hint(username, email)
                 if result.get("success"):
                     result["retry_count"] = retry
                     return result
@@ -1109,7 +1110,7 @@ class TwitterClient:
         """判断是否为网络错误 (兼容旧代码，调用静态方法)"""
         return self.is_network_error(error_msg)
     
-    def _do_password_reset_email_hint_sync(self, username: str) -> Dict[str, Any]:
+    def _do_password_reset_email_hint_sync(self, username: str, email: str = None) -> Dict[str, Any]:
         """执行获取找回密码邮箱的核心逻辑 (同步版本，在线程中执行)"""
         reset_session = None
         
@@ -1291,9 +1292,76 @@ class TwitterClient:
                     }
                 
                 data = resp.json()
+                flow_token = data.get("flow_token")
                 subtask_ids = [s.get("subtask_id") for s in data.get("subtasks", [])]
             
-            # 7. 从 PasswordResetChooseChallenge 提取邮箱
+            # 7. PwrKnowledgeChallenge - 邮箱验证 (如果出现)
+            # 参考: https://github.com/fa0311/TwitterFrontendFlow/blob/master/sample.py
+            if "PwrKnowledgeChallenge" in subtask_ids:
+                if not email:
+                    # 没有提供邮箱，返回需要邮箱验证的提示
+                    return {
+                        "success": False,
+                        "email_hint": None,
+                        "error": "需要邮箱验证(PwrKnowledgeChallenge)，请提供email参数",
+                        "is_network_error": False,
+                        "need_email_verification": True
+                    }
+                
+                time.sleep(random.uniform(0.3, 0.8))
+                resp = self._request_with_retry(
+                    reset_session, "POST",
+                    "https://api.x.com/1.1/onboarding/task.json",
+                    headers=get_headers(),
+                    json={
+                        "flow_token": flow_token,
+                        "subtask_inputs": [{
+                            "subtask_id": "PwrKnowledgeChallenge",
+                            "enter_text": {
+                                "text": email,
+                                "link": "next_link"
+                            }
+                        }]
+                    },
+                    timeout=30
+                )
+                update_ct0()
+                
+                # 检查响应
+                try:
+                    data = resp.json()
+                except:
+                    return {
+                        "success": False,
+                        "email_hint": None,
+                        "error": f"PwrKnowledgeChallenge失败({resp.status_code}): {resp.text[:100]}",
+                        "is_network_error": resp.status_code in [502, 503, 504]
+                    }
+                
+                # 检查是否有errors且包含code，有则判定为邮箱不匹配
+                errors = data.get("errors", [])
+                if errors and any(err.get("code") for err in errors):
+                    error_code = errors[0].get("code", "unknown")
+                    return {
+                        "success": False,
+                        "email_hint": None,
+                        "error": f"邮箱验证失败，邮箱不匹配(code: {error_code})",
+                        "is_network_error": False,
+                        "email_mismatch": True
+                    }
+                
+                if resp.status_code != 200:
+                    return {
+                        "success": False,
+                        "email_hint": None,
+                        "error": f"PwrKnowledgeChallenge失败({resp.status_code}): {resp.text[:100]}",
+                        "is_network_error": resp.status_code in [502, 503, 504]
+                    }
+                
+                flow_token = data.get("flow_token")
+                subtask_ids = [s.get("subtask_id") for s in data.get("subtasks", [])]
+            
+            # 8. 从 PasswordResetChooseChallenge 提取邮箱
             for subtask in data.get("subtasks", []):
                 subtask_id = subtask.get("subtask_id", "")
                 
@@ -1304,9 +1372,9 @@ class TwitterClient:
                         if isinstance(text, dict):
                             text = text.get("text", "")
                         if isinstance(text, str) and "@" in text and "*" in text:
-                            email = self._extract_pure_email(text)
-                            if email:
-                                return {"success": True, "email_hint": email, "error": None, "is_network_error": False}
+                            extracted_email = self._extract_pure_email(text)
+                            if extracted_email:
+                                return {"success": True, "email_hint": extracted_email, "error": None, "is_network_error": False}
                 
                 email_hint = self._extract_email_hint_from_subtask(subtask)
                 if email_hint:
@@ -1329,9 +1397,9 @@ class TwitterClient:
                 except:
                     pass
     
-    async def _do_password_reset_email_hint(self, username: str) -> Dict[str, Any]:
+    async def _do_password_reset_email_hint(self, username: str, email: str = None) -> Dict[str, Any]:
         """执行获取找回密码邮箱 (在线程池中执行避免阻塞)"""
-        return await asyncio.to_thread(self._do_password_reset_email_hint_sync, username)
+        return await asyncio.to_thread(self._do_password_reset_email_hint_sync, username, email)
     
     def _request_with_retry(self, session, method: str, url: str, max_retries: int = 2, **kwargs):
         """带重试的请求方法 - 显式传递代理确保代理被使用"""
