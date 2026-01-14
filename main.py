@@ -402,6 +402,34 @@ async def get_accounts_by_follower_range(
 
 # ==================== 账号提取 API ====================
 
+@app.get("/api/extract/count", response_model=ApiResponse, tags=["提取"])
+async def get_extractable_count(
+    status: Optional[str] = Query(None, description="账号状态"),
+    country: Optional[str] = Query(None, description="国家筛选"),
+    min_followers: int = Query(0, ge=0, description="最小粉丝数"),
+    max_followers: int = Query(999999999, ge=0, description="最大粉丝数"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取可提取账号数量（根据筛选条件）
+    
+    用于在提取前显示符合条件的可提取账号数量
+    """
+    service = AccountService(db)
+    
+    count = await service.get_extractable_count(
+        status=status,
+        country=country,
+        min_followers=min_followers,
+        max_followers=max_followers
+    )
+    
+    return ApiResponse(
+        success=True,
+        data={"count": count}
+    )
+
+
 @app.post("/api/extract", response_model=ApiResponse, tags=["提取"])
 async def extract_accounts(
     request: ExtractAccountsRequest,

@@ -146,6 +146,7 @@ const AccountsPage = {
                     />
                   </th>
                   <th>用户名</th>
+                  <th>邮箱</th>
                   <th>粉丝</th>
                   <th>关注</th>
                   <th>国家</th>
@@ -171,6 +172,7 @@ const AccountsPage = {
                     <a :href="'https://x.com/' + acc.username" target="_blank" class="username-link">@{{ acc.username }}</a>
                     <a :href="'https://x.com/' + acc.username" target="_blank" class="profile-link" title="打开主页">🔗</a>
                   </td>
+                  <td class="email-col" :title="acc.email || ''">{{ acc.email || '-' }}</td>
                   <td class="mono">{{ (acc.follower_count || 0).toLocaleString() }}</td>
                   <td class="mono">{{ (acc.following_count || 0).toLocaleString() }}</td>
                   <td>{{ acc.country || '-' }}</td>
@@ -395,6 +397,15 @@ const accountsStyles = `
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: help;
+  }
+  .email-col {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
     color: var(--text-secondary);
     cursor: help;
   }

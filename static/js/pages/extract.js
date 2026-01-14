@@ -22,7 +22,10 @@ const ExtractPage = {
       },
       loading: false,
       extractedAccounts: [],
-      error: ''
+      error: '',
+      // 可提取数量（根据当前筛选条件）
+      extractableCount: 0,
+      countLoading: false
     }
   },
   computed: {
@@ -32,11 +35,12 @@ const ExtractPage = {
     selectedRangeLabel() {
       return Utils.getRangeLabel(this.form.minFollowers, this.form.maxFollowers)
     },
-    extractableCount() {
-      return this.stats?.extractable_count ?? 0
-    },
     displayAccounts() {
       return this.extractedAccounts.slice(0, 20)
+    },
+    // 所有可用的状态选项
+    statusOptions() {
+      return ['正常', '冻结', '改密', '锁号', '错误', '待检测']
     }
   },
   template: `
@@ -51,10 +55,12 @@ const ExtractPage = {
         <div class="extractable-hint">
           <div class="extractable-icon">📦</div>
           <div class="extractable-info">
-            <div class="extractable-value">{{ (extractableCount || 0).toLocaleString() }}</div>
+            <div class="extractable-value" :class="{ 'loading': countLoading }">
+              {{ countLoading ? '...' : (extractableCount || 0).toLocaleString() }}
+            </div>
             <div class="extractable-label">可提取账号</div>
           </div>
-          <div class="extractable-note">仅显示未提取过的账号</div>
+          <div class="extractable-note">当前筛选条件下未提取过的账号</div>
         </div>
         
         <!-- 状态选择 -->
@@ -62,7 +68,7 @@ const ExtractPage = {
           <label class="form-label">账号状态</label>
           <div class="option-group">
             <button 
-              v-for="s in ['正常', '冻结', '改密']" 
+              v-for="s in statusOptions" 
               :key="s" 
               class="option-btn" 
               :class="{ active: form.status === s }" 
@@ -200,6 +206,24 @@ const ExtractPage = {
     </div>
   `,
   methods: {
+    // 获取可提取账号数量
+    async fetchExtractableCount() {
+      this.countLoading = true
+      try {
+        const res = await API.getExtractableCount({
+          status: this.form.status,
+          country: this.form.country || undefined,
+          min_followers: this.form.minFollowers,
+          max_followers: this.form.maxFollowers
+        })
+        if (res.success) {
+          this.extractableCount = res.data?.count || 0
+        }
+      } catch (e) {
+        console.warn('获取可提取数量失败:', e)
+      }
+      this.countLoading = false
+    },
     async handleExtract() {
       this.loading = true
       this.error = ''
@@ -219,6 +243,8 @@ const ExtractPage = {
             Toast.success(`成功提取 ${this.extractedAccounts.length} 个账号，已标记为已提取`)
             // 通知父组件刷新统计
             this.$emit('refresh-stats')
+            // 刷新可提取数量
+            this.fetchExtractableCount()
           } else {
             Toast.warning('没有找到符合条件的可提取账号')
           }
@@ -272,10 +298,22 @@ const ExtractPage = {
     }
   },
   watch: {
-    'form.status'() { this.saveConfig() },
-    'form.country'() { this.saveConfig() },
-    'form.minFollowers'() { this.saveConfig() },
-    'form.maxFollowers'() { this.saveConfig() },
+    'form.status'() { 
+      this.saveConfig()
+      this.fetchExtractableCount()
+    },
+    'form.country'() { 
+      this.saveConfig()
+      this.fetchExtractableCount()
+    },
+    'form.minFollowers'() { 
+      this.saveConfig()
+      this.fetchExtractableCount()
+    },
+    'form.maxFollowers'() { 
+      this.saveConfig()
+      this.fetchExtractableCount()
+    },
     'form.limit'() { this.saveConfig() }
   },
   created() {
@@ -283,6 +321,8 @@ const ExtractPage = {
   },
   mounted() {
     this.loadConfig()
+    // 加载配置后立即获取可提取数量
+    this.fetchExtractableCount()
   }
 }
 
@@ -307,6 +347,10 @@ const extractStyles = `
     font-weight: 700;
     color: var(--success);
     font-family: var(--font-mono);
+    transition: opacity 0.2s;
+  }
+  .extractable-value.loading {
+    opacity: 0.5;
   }
   .extractable-label {
     font-size: 0.8rem;

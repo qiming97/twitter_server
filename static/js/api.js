@@ -98,6 +98,16 @@ const API = {
 
   // ==================== 提取 API ====================
 
+  // 获取可提取账号数量（根据筛选条件）
+  getExtractableCount(params) {
+    const query = {}
+    if (params.status) query.status = params.status
+    if (params.country) query.country = params.country
+    if (params.min_followers !== undefined) query.min_followers = params.min_followers
+    if (params.max_followers !== undefined) query.max_followers = params.max_followers
+    return this.get('/api/extract/count', query)
+  },
+
   // 提取账号
   extractAccounts(data) {
     return this.post('/api/extract', data)

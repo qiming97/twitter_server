@@ -549,6 +549,37 @@ class AccountService:
     
     # ==================== 账号提取 ====================
     
+    async def get_extractable_count(
+        self,
+        status: Optional[str] = None,
+        country: Optional[str] = None,
+        min_followers: int = 0,
+        max_followers: int = 999999999
+    ) -> int:
+        """
+        获取可提取账号数量（根据筛选条件）
+        
+        只统计未提取过的账号
+        """
+        conditions = [
+            TwitterAccount.is_extracted == False  # 只统计未提取过的
+        ]
+        
+        # 如果指定了状态，添加状态筛选
+        if status:
+            conditions.append(TwitterAccount.status == status)
+        
+        if country:
+            conditions.append(TwitterAccount.country == country)
+        
+        conditions.append(TwitterAccount.follower_count >= min_followers)
+        conditions.append(TwitterAccount.follower_count <= max_followers)
+        
+        count_stmt = select(func.count()).select_from(TwitterAccount).where(and_(*conditions))
+        total = (await self.db.execute(count_stmt)).scalar()
+        
+        return total or 0
+    
     async def extract_accounts(
         self,
         country: Optional[str] = None,
