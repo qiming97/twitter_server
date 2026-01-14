@@ -22,37 +22,57 @@ const DashboardPage = {
         <div class="grid grid-5" style="margin-bottom: 20px;">
           <div class="stat-card" style="--status-color: var(--success)">
             <div class="stat-icon">✓</div>
-            <div>
-              <div class="stat-value" style="color: var(--success)">{{ (stats.by_status['正常'] || 0).toLocaleString() }}</div>
+            <div class="stat-content">
+              <div class="stat-value" style="color: var(--success)">{{ getStatusTotal('正常').toLocaleString() }}</div>
               <div class="stat-label">正常</div>
+              <div class="stat-sub">
+                <span class="premium-tag">⭐{{ getStatusPremium('正常') }}</span>
+                <span class="normal-tag">普{{ getStatusNonPremium('正常') }}</span>
+              </div>
             </div>
           </div>
           <div class="stat-card" style="--status-color: var(--error)">
             <div class="stat-icon">❄</div>
-            <div>
-              <div class="stat-value" style="color: var(--error)">{{ (stats.by_status['冻结'] || 0).toLocaleString() }}</div>
+            <div class="stat-content">
+              <div class="stat-value" style="color: var(--error)">{{ getStatusTotal('冻结').toLocaleString() }}</div>
               <div class="stat-label">冻结</div>
+              <div class="stat-sub">
+                <span class="premium-tag">⭐{{ getStatusPremium('冻结') }}</span>
+                <span class="normal-tag">普{{ getStatusNonPremium('冻结') }}</span>
+              </div>
             </div>
           </div>
           <div class="stat-card" style="--status-color: var(--warning)">
             <div class="stat-icon">🔑</div>
-            <div>
-              <div class="stat-value" style="color: var(--warning)">{{ (stats.by_status['改密'] || 0).toLocaleString() }}</div>
+            <div class="stat-content">
+              <div class="stat-value" style="color: var(--warning)">{{ getStatusTotal('改密').toLocaleString() }}</div>
               <div class="stat-label">改密</div>
+              <div class="stat-sub">
+                <span class="premium-tag">⭐{{ getStatusPremium('改密') }}</span>
+                <span class="normal-tag">普{{ getStatusNonPremium('改密') }}</span>
+              </div>
             </div>
           </div>
           <div class="stat-card" style="--status-color: #e11d48">
             <div class="stat-icon">🔒</div>
-            <div>
-              <div class="stat-value" style="color: #e11d48">{{ (stats.by_status['锁号'] || 0).toLocaleString() }}</div>
+            <div class="stat-content">
+              <div class="stat-value" style="color: #e11d48">{{ getStatusTotal('锁号').toLocaleString() }}</div>
               <div class="stat-label">锁号</div>
+              <div class="stat-sub">
+                <span class="premium-tag">⭐{{ getStatusPremium('锁号') }}</span>
+                <span class="normal-tag">普{{ getStatusNonPremium('锁号') }}</span>
+              </div>
             </div>
           </div>
           <div class="stat-card" style="--status-color: #8b5cf6">
             <div class="stat-icon">⚠</div>
-            <div>
-              <div class="stat-value" style="color: #8b5cf6">{{ (stats.by_status['错误'] || 0).toLocaleString() }}</div>
+            <div class="stat-content">
+              <div class="stat-value" style="color: #8b5cf6">{{ getStatusTotal('错误').toLocaleString() }}</div>
               <div class="stat-label">错误</div>
+              <div class="stat-sub">
+                <span class="premium-tag">⭐{{ getStatusPremium('错误') }}</span>
+                <span class="normal-tag">普{{ getStatusNonPremium('错误') }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -71,7 +91,15 @@ const DashboardPage = {
                   <div class="extract-value">{{ stats.extractable_count.toLocaleString() }}</div>
                   <div class="extract-label">可提取</div>
                 </div>
-                <div class="extract-hint">正常且未提取</div>
+                <div class="extract-hint">正常+锁号 未提取</div>
+              </div>
+              <div class="extract-stat">
+                <div class="extract-icon" style="background: var(--warning-bg); color: var(--warning);">⭐</div>
+                <div class="extract-info">
+                  <div class="extract-value">{{ (stats.extractable_premium_count || 0).toLocaleString() }}</div>
+                  <div class="extract-label">会员可提取</div>
+                </div>
+                <div class="extract-hint">会员且未提取</div>
               </div>
               <div class="extract-stat">
                 <div class="extract-icon" style="background: var(--info-bg); color: var(--info);">📋</div>
@@ -210,6 +238,26 @@ const DashboardPage = {
     getBarWidth(value, max) {
       if (!max) return '0%'
       return (value / max * 100) + '%'
+    },
+    // 获取状态总数
+    getStatusTotal(status) {
+      const stat = this.stats?.by_status?.[status]
+      if (!stat) return 0
+      // 兼容新旧数据格式
+      if (typeof stat === 'number') return stat
+      return stat.total || 0
+    },
+    // 获取状态会员数
+    getStatusPremium(status) {
+      const stat = this.stats?.by_status?.[status]
+      if (!stat || typeof stat === 'number') return 0
+      return stat.premium || 0
+    },
+    // 获取状态非会员数
+    getStatusNonPremium(status) {
+      const stat = this.stats?.by_status?.[status]
+      if (!stat || typeof stat === 'number') return 0
+      return stat.non_premium || 0
     }
   },
   mounted() {
@@ -250,6 +298,28 @@ const dashboardStyles = `
     background: var(--gradient-primary);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+  }
+  
+  .stat-content {
+    flex: 1;
+  }
+  .stat-sub {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 0.7rem;
+  }
+  .premium-tag {
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .normal-tag {
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 1px 6px;
+    border-radius: 4px;
   }
   
   .main-stat {

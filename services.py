@@ -389,13 +389,16 @@ class AccountService:
         status: str,
         page: int = 1,
         page_size: int = 100,
-        is_extracted: Optional[bool] = None
+        is_extracted: Optional[bool] = None,
+        is_premium: Optional[bool] = None
     ) -> Tuple[List[TwitterAccount], int]:
         """按状态获取账号"""
         # 构建条件
         conditions = [TwitterAccount.status == status]
         if is_extracted is not None:
             conditions.append(TwitterAccount.is_extracted == is_extracted)
+        if is_premium is not None:
+            conditions.append(TwitterAccount.is_premium == is_premium)
         
         # 获取总数
         count_stmt = select(func.count()).select_from(TwitterAccount).where(and_(*conditions))
@@ -420,7 +423,8 @@ class AccountService:
         country: str,
         page: int = 1,
         page_size: int = 100,
-        is_extracted: Optional[bool] = None
+        is_extracted: Optional[bool] = None,
+        is_premium: Optional[bool] = None
     ) -> Tuple[List[TwitterAccount], int]:
         """按国家获取账号"""
         # 构建条件
@@ -430,6 +434,8 @@ class AccountService:
         ]
         if is_extracted is not None:
             conditions.append(TwitterAccount.is_extracted == is_extracted)
+        if is_premium is not None:
+            conditions.append(TwitterAccount.is_premium == is_premium)
         
         count_stmt = select(func.count()).select_from(TwitterAccount).where(and_(*conditions))
         total = (await self.db.execute(count_stmt)).scalar()
@@ -453,7 +459,8 @@ class AccountService:
         max_followers: int = 999999999,
         page: int = 1,
         page_size: int = 100,
-        is_extracted: Optional[bool] = None
+        is_extracted: Optional[bool] = None,
+        is_premium: Optional[bool] = None
     ) -> Tuple[List[TwitterAccount], int]:
         """按粉丝数量范围获取账号"""
         # 构建条件
@@ -464,6 +471,8 @@ class AccountService:
         ]
         if is_extracted is not None:
             conditions.append(TwitterAccount.is_extracted == is_extracted)
+        if is_premium is not None:
+            conditions.append(TwitterAccount.is_premium == is_premium)
         
         count_stmt = select(func.count()).select_from(TwitterAccount).where(and_(*conditions))
         total = (await self.db.execute(count_stmt)).scalar()
@@ -554,7 +563,8 @@ class AccountService:
         status: Optional[str] = None,
         country: Optional[str] = None,
         min_followers: int = 0,
-        max_followers: int = 999999999
+        max_followers: int = 999999999,
+        is_premium: Optional[bool] = None
     ) -> int:
         """
         获取可提取账号数量（根据筛选条件）
@@ -572,6 +582,9 @@ class AccountService:
         if country:
             conditions.append(TwitterAccount.country == country)
         
+        if is_premium is not None:
+            conditions.append(TwitterAccount.is_premium == is_premium)
+        
         conditions.append(TwitterAccount.follower_count >= min_followers)
         conditions.append(TwitterAccount.follower_count <= max_followers)
         
@@ -587,6 +600,7 @@ class AccountService:
         max_followers: int = 999999999,
         limit: int = 100,
         status: str = AccountStatus.NORMAL.value,
+        is_premium: Optional[bool] = None,
         mark_extracted: bool = True
     ) -> List[TwitterAccount]:
         """
@@ -603,6 +617,9 @@ class AccountService:
         
         if country:
             conditions.append(TwitterAccount.country == country)
+        
+        if is_premium is not None:
+            conditions.append(TwitterAccount.is_premium == is_premium)
         
         conditions.append(TwitterAccount.follower_count >= min_followers)
         conditions.append(TwitterAccount.follower_count <= max_followers)
@@ -651,30 +668,45 @@ class AccountService:
     
     # ==================== 统计信息 ====================
     
-    async def get_status_statistics(self) -> Dict[str, int]:
-        """获取状态统计 - 使用单条 GROUP BY 查询优化性能"""
+    async def get_status_statistics(self) -> Dict[str, Dict[str, int]]:
+        """获取状态统计 - 包含总量、会员数量、非会员数量"""
         stmt = (
             select(
                 TwitterAccount.status,
+                TwitterAccount.is_premium,
                 func.count(TwitterAccount.id).label('count')
             )
-            .group_by(TwitterAccount.status)
-            )
+            .group_by(TwitterAccount.status, TwitterAccount.is_premium)
+        )
         db_result = await self.db.execute(stmt)
         rows = db_result.all()
         
-        # 初始化所有状态为 0
-        result = {status.value: 0 for status in AccountStatus}
+        # 初始化所有状态
+        result = {}
+        for status in AccountStatus:
+            result[status.value] = {
+                "total": 0,
+                "premium": 0,
+                "non_premium": 0
+            }
+        
         # 填入实际统计值
         for row in rows:
             if row.status in result:
-                result[row.status] = row.count
+                result[row.status]["total"] += row.count
+                if row.is_premium:
+                    result[row.status]["premium"] += row.count
+                else:
+                    result[row.status]["non_premium"] += row.count
         
         return result
     
     async def get_overview_statistics(self) -> Dict[str, Any]:
         """获取总览统计 - 优化为单次聚合查询"""
         from sqlalchemy import case
+        
+        # 可提取状态：正常和锁号
+        extractable_statuses = [AccountStatus.NORMAL.value, AccountStatus.LOCKED.value]
         
         # 使用单条查询获取所有基础统计
         stmt = select(
@@ -687,13 +719,23 @@ class AccountService:
                 (TwitterAccount.is_extracted == True, 1),
                 else_=0
             )).label('extracted_count'),
+            # 可提取数量：正常+锁号且未提取
             func.sum(case(
                 (and_(
-                    TwitterAccount.status == AccountStatus.NORMAL.value,
+                    TwitterAccount.status.in_(extractable_statuses),
                     TwitterAccount.is_extracted == False
                 ), 1),
                 else_=0
             )).label('extractable_count'),
+            # 可提取的会员数量
+            func.sum(case(
+                (and_(
+                    TwitterAccount.status.in_(extractable_statuses),
+                    TwitterAccount.is_extracted == False,
+                    TwitterAccount.is_premium == True
+                ), 1),
+                else_=0
+            )).label('extractable_premium_count'),
         ).select_from(TwitterAccount)
         
         result = await self.db.execute(stmt)
@@ -703,6 +745,7 @@ class AccountService:
         pending_count = row.pending_count or 0
         extracted_count = row.extracted_count or 0
         extractable_count = row.extractable_count or 0
+        extractable_premium_count = row.extractable_premium_count or 0
         checked_count = total - pending_count
         
         # 这些已经优化过，使用单次查询
@@ -716,6 +759,7 @@ class AccountService:
             "checked_count": checked_count,
             "extracted_count": extracted_count,
             "extractable_count": extractable_count,
+            "extractable_premium_count": extractable_premium_count,
             "by_status": status_stats,
             "by_country": country_stats[:10],  # 前10个国家
             "by_follower_range": follower_stats

@@ -326,6 +326,7 @@ async def get_accounts_by_status(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=1000),
     is_extracted: Optional[bool] = Query(None, description="是否已提取"),
+    is_premium: Optional[bool] = Query(None, description="是否是会员"),
     db: AsyncSession = Depends(get_db)
 ):
     """按状态获取账号: 正常、冻结、改密"""
@@ -334,7 +335,8 @@ async def get_accounts_by_status(
         status=status,
         page=page,
         page_size=page_size,
-        is_extracted=is_extracted
+        is_extracted=is_extracted,
+        is_premium=is_premium
     )
     
     return PaginatedResponse(
@@ -352,6 +354,7 @@ async def get_accounts_by_country(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=1000),
     is_extracted: Optional[bool] = Query(None, description="是否已提取"),
+    is_premium: Optional[bool] = Query(None, description="是否是会员"),
     db: AsyncSession = Depends(get_db)
 ):
     """按国家获取账号"""
@@ -360,7 +363,8 @@ async def get_accounts_by_country(
         country=country,
         page=page,
         page_size=page_size,
-        is_extracted=is_extracted
+        is_extracted=is_extracted,
+        is_premium=is_premium
     )
     
     return PaginatedResponse(
@@ -379,6 +383,7 @@ async def get_accounts_by_follower_range(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=1000),
     is_extracted: Optional[bool] = Query(None, description="是否已提取"),
+    is_premium: Optional[bool] = Query(None, description="是否是会员"),
     db: AsyncSession = Depends(get_db)
 ):
     """按粉丝数量范围获取账号"""
@@ -388,7 +393,8 @@ async def get_accounts_by_follower_range(
         max_followers=max_followers,
         page=page,
         page_size=page_size,
-        is_extracted=is_extracted
+        is_extracted=is_extracted,
+        is_premium=is_premium
     )
     
     return PaginatedResponse(
@@ -408,6 +414,7 @@ async def get_extractable_count(
     country: Optional[str] = Query(None, description="国家筛选"),
     min_followers: int = Query(0, ge=0, description="最小粉丝数"),
     max_followers: int = Query(999999999, ge=0, description="最大粉丝数"),
+    is_premium: Optional[bool] = Query(None, description="是否是会员"),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -421,7 +428,8 @@ async def get_extractable_count(
         status=status,
         country=country,
         min_followers=min_followers,
-        max_followers=max_followers
+        max_followers=max_followers,
+        is_premium=is_premium
     )
     
     return ApiResponse(
@@ -447,7 +455,8 @@ async def extract_accounts(
         min_followers=request.min_followers,
         max_followers=request.max_followers,
         limit=request.limit,
-        status=request.status
+        status=request.status,
+        is_premium=request.is_premium
     )
     
     return ApiResponse(
@@ -475,7 +484,8 @@ async def export_accounts(
         min_followers=request.min_followers,
         max_followers=request.max_followers,
         limit=request.limit,
-        status=request.status
+        status=request.status,
+        is_premium=request.is_premium
     )
     
     export_content = await service.export_accounts(accounts, format=format)

@@ -71,21 +71,23 @@ const API = {
   // ==================== 账号列表 API ====================
 
   // 按状态获取
-  getAccountsByStatus(status, page = 1, pageSize = 50, isExtracted = undefined) {
+  getAccountsByStatus(status, page = 1, pageSize = 50, isExtracted = undefined, isPremium = undefined) {
     const params = { page, page_size: pageSize }
     if (isExtracted !== undefined) params.is_extracted = isExtracted
+    if (isPremium !== undefined) params.is_premium = isPremium
     return this.get(`/api/accounts/status/${encodeURIComponent(status)}`, params)
   },
 
   // 按国家获取
-  getAccountsByCountry(country, page = 1, pageSize = 50, isExtracted = undefined) {
+  getAccountsByCountry(country, page = 1, pageSize = 50, isExtracted = undefined, isPremium = undefined) {
     const params = { page, page_size: pageSize }
     if (isExtracted !== undefined) params.is_extracted = isExtracted
+    if (isPremium !== undefined) params.is_premium = isPremium
     return this.get(`/api/accounts/country/${encodeURIComponent(country)}`, params)
   },
 
   // 按粉丝数量获取
-  getAccountsByFollowers(minFollowers, maxFollowers, page = 1, pageSize = 50, isExtracted = undefined) {
+  getAccountsByFollowers(minFollowers, maxFollowers, page = 1, pageSize = 50, isExtracted = undefined, isPremium = undefined) {
     const params = {
       min_followers: minFollowers,
       max_followers: maxFollowers,
@@ -93,6 +95,7 @@ const API = {
       page_size: pageSize
     }
     if (isExtracted !== undefined) params.is_extracted = isExtracted
+    if (isPremium !== undefined) params.is_premium = isPremium
     return this.get('/api/accounts/followers', params)
   },
 
@@ -105,6 +108,7 @@ const API = {
     if (params.country) query.country = params.country
     if (params.min_followers !== undefined) query.min_followers = params.min_followers
     if (params.max_followers !== undefined) query.max_followers = params.max_followers
+    if (params.is_premium !== undefined) query.is_premium = params.is_premium
     return this.get('/api/extract/count', query)
   },
 

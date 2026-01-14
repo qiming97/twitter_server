@@ -18,7 +18,8 @@ const ExtractPage = {
         country: '',
         minFollowers: 0,
         maxFollowers: 999999999,
-        limit: 100
+        limit: 100,
+        isPremium: ''  // '', 'true', 'false'
       },
       loading: false,
       extractedAccounts: [],
@@ -88,6 +89,28 @@ const ExtractPage = {
           </select>
         </div>
         
+        <!-- 是否会员 -->
+        <div class="form-group">
+          <label class="form-label">是否会员</label>
+          <div class="option-group">
+            <button 
+              class="option-btn" 
+              :class="{ active: form.isPremium === '' }" 
+              @click="form.isPremium = ''"
+            >全部</button>
+            <button 
+              class="option-btn" 
+              :class="{ active: form.isPremium === 'true' }" 
+              @click="form.isPremium = 'true'"
+            >⭐ 会员</button>
+            <button 
+              class="option-btn" 
+              :class="{ active: form.isPremium === 'false' }" 
+              @click="form.isPremium = 'false'"
+            >普通用户</button>
+          </div>
+        </div>
+        
         <!-- 粉丝数量 -->
         <div class="form-group">
           <label class="form-label">粉丝数量</label>
@@ -143,6 +166,7 @@ const ExtractPage = {
           <div class="condition-list">
             <span>状态: <strong>{{ form.status }}</strong></span>
             <span v-if="form.country">国家: <strong>{{ form.country }}</strong></span>
+            <span>会员: <strong>{{ form.isPremium === 'true' ? '会员' : form.isPremium === 'false' ? '非会员' : '全部' }}</strong></span>
             <span>粉丝: <strong>{{ selectedRangeLabel }}</strong></span>
             <span>数量: <strong>{{ form.limit }}</strong></span>
           </div>
@@ -210,11 +234,13 @@ const ExtractPage = {
     async fetchExtractableCount() {
       this.countLoading = true
       try {
+        const isPremium = this.form.isPremium === '' ? undefined : this.form.isPremium === 'true'
         const res = await API.getExtractableCount({
           status: this.form.status,
           country: this.form.country || undefined,
           min_followers: this.form.minFollowers,
-          max_followers: this.form.maxFollowers
+          max_followers: this.form.maxFollowers,
+          is_premium: isPremium
         })
         if (res.success) {
           this.extractableCount = res.data?.count || 0
@@ -229,12 +255,14 @@ const ExtractPage = {
       this.error = ''
       
       try {
+        const isPremium = this.form.isPremium === '' ? undefined : this.form.isPremium === 'true'
         const res = await API.extractAccounts({
           country: this.form.country || undefined,
           min_followers: this.form.minFollowers,
           max_followers: this.form.maxFollowers,
           limit: this.form.limit,
-          status: this.form.status
+          status: this.form.status,
+          is_premium: isPremium
         })
         
         if (res.success) {
@@ -278,6 +306,7 @@ const ExtractPage = {
           if (config.minFollowers !== undefined) this.form.minFollowers = config.minFollowers
           if (config.maxFollowers !== undefined) this.form.maxFollowers = config.maxFollowers
           if (config.limit !== undefined) this.form.limit = config.limit
+          if (config.isPremium !== undefined) this.form.isPremium = config.isPremium
         }
       } catch (e) {
         console.warn('加载提取配置失败:', e)
@@ -290,7 +319,8 @@ const ExtractPage = {
           country: this.form.country,
           minFollowers: this.form.minFollowers,
           maxFollowers: this.form.maxFollowers,
-          limit: this.form.limit
+          limit: this.form.limit,
+          isPremium: this.form.isPremium
         }))
       } catch (e) {
         console.warn('保存提取配置失败:', e)
@@ -311,6 +341,10 @@ const ExtractPage = {
       this.fetchExtractableCount()
     },
     'form.maxFollowers'() { 
+      this.saveConfig()
+      this.fetchExtractableCount()
+    },
+    'form.isPremium'() { 
       this.saveConfig()
       this.fetchExtractableCount()
     },

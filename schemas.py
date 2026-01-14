@@ -32,6 +32,7 @@ class ExtractAccountsRequest(BaseModel):
     max_followers: int = Field(999999999, description="最大粉丝数")
     limit: int = Field(100, description="提取数量", ge=1, le=10000)
     status: str = Field("正常", description="账号状态")
+    is_premium: Optional[bool] = Field(None, description="是否是会员")
 
 
 class ImportAccountsRequest(BaseModel):

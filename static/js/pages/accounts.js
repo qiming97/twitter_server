@@ -17,7 +17,8 @@ const AccountsPage = {
         country: '',
         minFollowers: 0,
         maxFollowers: 999999999,
-        isExtracted: ''  // '', 'true', 'false'
+        isExtracted: '',  // '', 'true', 'false'
+        isPremium: ''     // '', 'true', 'false'
       },
       accounts: [],
       total: 0,
@@ -91,14 +92,24 @@ const AccountsPage = {
           >{{ r.label }}</button>
         </div>
         
-        <!-- 是否提取过筛选 -->
-        <div class="extract-filter">
-          <label class="form-label" style="margin-right: 10px; margin-bottom: 0;">是否提取过:</label>
-          <select class="input" style="width: 150px;" v-model="filter.isExtracted" @change="fetchAccounts()">
-            <option value="">全部</option>
-            <option value="false">未提取</option>
-            <option value="true">已提取</option>
-          </select>
+        <!-- 是否提取过 & 是否会员筛选 -->
+        <div class="extra-filters">
+          <div class="filter-item">
+            <label class="form-label">是否提取过:</label>
+            <select class="input" style="width: 120px;" v-model="filter.isExtracted" @change="fetchAccounts()">
+              <option value="">全部</option>
+              <option value="false">未提取</option>
+              <option value="true">已提取</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label class="form-label">是否会员:</label>
+            <select class="input" style="width: 120px;" v-model="filter.isPremium" @change="fetchAccounts()">
+              <option value="">全部</option>
+              <option value="true">会员</option>
+              <option value="false">非会员</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -238,15 +249,16 @@ const AccountsPage = {
       this.clearSelection()
       try {
         let res
-        // 构建 is_extracted 参数
+        // 构建 is_extracted 和 is_premium 参数
         const isExtracted = this.filter.isExtracted === '' ? undefined : this.filter.isExtracted === 'true'
+        const isPremium = this.filter.isPremium === '' ? undefined : this.filter.isPremium === 'true'
         
         if (this.filter.type === 'status') {
-          res = await API.getAccountsByStatus(this.filter.status, this.page, 50, isExtracted)
+          res = await API.getAccountsByStatus(this.filter.status, this.page, 50, isExtracted, isPremium)
         } else if (this.filter.type === 'country') {
-          res = await API.getAccountsByCountry(this.filter.country || '未知', this.page, 50, isExtracted)
+          res = await API.getAccountsByCountry(this.filter.country || '未知', this.page, 50, isExtracted, isPremium)
         } else {
-          res = await API.getAccountsByFollowers(this.filter.minFollowers, this.filter.maxFollowers, this.page, 50, isExtracted)
+          res = await API.getAccountsByFollowers(this.filter.minFollowers, this.filter.maxFollowers, this.page, 50, isExtracted, isPremium)
         }
         this.accounts = res.items || []
         this.total = res.total || 0
@@ -354,12 +366,22 @@ const accountsStyles = `
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border);
   }
-  .extract-filter {
+  .extra-filters {
     display: flex;
     align-items: center;
+    gap: 20px;
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid var(--border);
+  }
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .filter-item .form-label {
+    margin-bottom: 0;
+    white-space: nowrap;
   }
   .username {
     font-family: var(--font-mono);
