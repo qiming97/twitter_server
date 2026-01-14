@@ -839,6 +839,14 @@ class TaskManager:
                 self.add_log("info", f"   @{username} (重试了 {email_result.get('retry_count')} 次)")
             
             if not masked_email:
+                # 打印完整响应，方便调试
+                self.add_log("info", f"📦 @{username} get_password_reset_email_hint 完整响应:")
+                self.add_log("info", f"   success: {email_result.get('success')}")
+                self.add_log("info", f"   email_hint: {email_result.get('email_hint')}")
+                self.add_log("info", f"   error: {email_result.get('error')}")
+                self.add_log("info", f"   retry_count: {email_result.get('retry_count', 0)}")
+                self.add_log("info", f"   is_network_error: {email_result.get('is_network_error', False)}")
+                
                 # 区分网络错误和其他错误
                 if email_result.get("is_network_error") or "重试" in str(email_result.get("error", "")):
                     account.status = "错误"
@@ -849,7 +857,7 @@ class TaskManager:
                     account.status = "改密"
                     account.status_message = email_result.get("error") or "无法获取找回密码邮箱提示"
                     self.state.reset_pwd_count += 1
-                    self.add_log("warning", f"⚠️ @{username} 步骤2结果: 无法获取找回邮箱")
+                    self.add_log("warning", f"⚠️ @{username} 步骤2结果: 无法获取找回邮箱 - {email_result.get('error', '')[:150]}")
                     self.add_log("warning", f"⚠️ @{username} 检测完成: 改密")
                 return
             

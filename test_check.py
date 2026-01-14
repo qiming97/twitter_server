@@ -3,11 +3,10 @@
 单个账号检测测试脚本
 从 XLS 文件读取账号，选择指定账号进行测试
 
-检测流程:
-1. 检查账号是否冻结
-2. 未冻结 -> Token登录获取完整信息 (accountData逻辑)
-3. Token登录失败 -> 找回密码检查邮箱
-4. 邮箱不匹配 -> 标记改密
+检测流程 (与 task_manager.py 保持一致):
+1. Token登录获取完整信息 (accountData逻辑)，同时检测冻结状态
+2. Token登录失败 -> 找回密码检查邮箱
+3. 邮箱不匹配 -> 标记改密
 
 返回格式: 用户名----密码----2FA----邮箱----邮箱密码----粉丝数量----国家----年份----是否会员
 
@@ -60,6 +59,7 @@ def get_default_proxy():
     
     if platform.system() == "Darwin":  # macOS
         try:
+            return LOCAL_PROXY
             # 检查是否有本地代理运行
             result = subprocess.run(['scutil', '--proxy'], capture_output=True, text=True)
             if 'HTTPProxy : 127.0.0.1' in result.stdout and 'HTTPPort : 7897' in result.stdout:
@@ -224,10 +224,9 @@ async def check_single_account(
     检测单个账号 (完整流程)
     
     流程:
-    1. 检查账号是否冻结
-    2. 未冻结 -> Token登录获取完整信息 (accountData逻辑)
-    3. Token登录失败 -> 找回密码检查邮箱
-    4. 邮箱不匹配 -> 标记改密
+    1. Token登录获取完整信息 (accountData逻辑)，同时检测冻结状态
+    2. Token登录失败 -> 找回密码检查邮箱
+    3. 邮箱不匹配 -> 标记改密
     
     Args:
         account: 账号信息字典
@@ -260,11 +259,14 @@ async def check_single_account(
     
     try:
         # 解析代理
+        proxy = LOCAL_PROXY
         parsed_proxy = parse_proxy(proxy) if proxy else None
         
         if verbose:
             print_colored(f"\n🔍 开始检测账号: @{username}", "cyan")
             print(f"   密码: {password[:5]}***" if password else "   密码: 无")
+            print(f"   原始代理: {proxy}")
+            print(f"   解析后代理: {parsed_proxy}")
         
         # 创建客户端
         client = TwitterClient(
@@ -275,45 +277,13 @@ async def check_single_account(
         client.username = username
         
         if verbose:
+            print(f"   客户端代理: {client.proxy}")
             print(f"   csrf_token: {client.csrf_token[:30]}..." if client.csrf_token else "   csrf_token: 无")
         
-        # ========== 步骤1: 检测是否冻结 ==========
-        if verbose:
-            print(f"\n📋 步骤1: 检测账号状态...")
-        
-        suspend_result = await client.check_account_suspended(username)
-        
-        if verbose:
-            print_result("冻结检测结果", suspend_result, "blue")
-        
-        if suspend_result.get("suspended"):
-            result["status"] = "冻结"
-            result["status_message"] = "账号已被冻结"
-            if verbose:
-                print_result("❌ 检测结果: 账号已冻结", result, "red")
-                print_export_format(result)
-            return result
-        
-        # 检查是否是网络错误 (exists 为 None)
-        if suspend_result.get("error") and suspend_result.get("exists") is None:
-            result["status"] = "网络错误"
-            result["status_message"] = suspend_result.get("message", "网络错误，需重试")
-            if verbose:
-                print_result("⚠️ 检测结果: 网络错误，需重试", result, "yellow")
-            return result
-        
-        # 账号不存在 (exists 明确为 False)
-        if suspend_result.get("exists") is False:
-            result["status"] = "不存在"
-            result["status_message"] = suspend_result.get("message", "账号不存在")
-            if verbose:
-                print_result("❌ 检测结果: 账号不存在", result, "red")
-            return result
-        
-        # ========== 步骤2: Token登录获取完整信息 (accountData逻辑) ==========
+        # ========== 步骤1: Token登录获取完整信息（同时检测冻结） ==========
         if cookie:
             if verbose:
-                print(f"\n📋 步骤2: Token登录获取完整信息 (accountData)...")
+                print(f"\n📋 步骤1: Token登录获取完整信息 (accountData)...")
             
             try:
                 # 使用 accountData 逻辑获取完整信息
@@ -338,49 +308,128 @@ async def check_single_account(
                 result["status_message"] = "账号正常"
                 
                 if verbose:
+                    print_colored(f"\n✓ 步骤1结果: Token登录成功", "green")
                     print_result("✅ 检测结果: 账号正常", result, "green")
                     print_export_format(result)
                     
                 return result
                 
             except Exception as e:
-                error_msg = str(e)
-                if verbose:
-                    print_colored(f"\n⚠️ Token登录失败: {error_msg[:100]}", "yellow")
+                error_msg = str(e).lower()
+                original_error = str(e)
                 
-                # Token登录失败，继续检查找回密码邮箱
+                if verbose:
+                    print_colored(f"\n⚠️ 步骤1结果: Token登录失败 - {original_error[:100]}", "yellow")
+                
+                # 检测是否冻结 (suspended)
+                is_suspended = (
+                    "suspend" in error_msg or
+                    "冻结" in error_msg or
+                    "userunavailable" in error_msg
+                )
+                
+                if is_suspended:
+                    result["status"] = "冻结"
+                    result["status_message"] = "账号已冻结"
+                    if verbose:
+                        print_result("❌ 检测结果: 账号已冻结", result, "red")
+                        print_export_format(result)
+                    return result
+                
+                # 检测账号是否不存在
+                is_not_exist = (
+                    "不存在" in error_msg or
+                    "not found" in error_msg or
+                    "user not found" in error_msg
+                )
+                
+                if is_not_exist:
+                    result["status"] = "不存在"
+                    result["status_message"] = "账号不存在"
+                    if verbose:
+                        print_result("❌ 检测结果: 账号不存在", result, "red")
+                    return result
+                
+                # 检测是否token失效 (code 32 = Could not authenticate you)
+                is_token_expired = (
+                    "could not authenticate" in error_msg or
+                    "code\":32" in error_msg or
+                    '"code":32' in error_msg or
+                    "code: 32" in error_msg
+                )
+                
+                if is_token_expired:
+                    if verbose:
+                        print_colored(f"   Token已失效，继续检查找回密码邮箱...", "yellow")
+                    # Token失效，继续步骤2检查邮箱
+                else:
+                    # 如果是密码验证错误（非token失效），标记锁号
+                    is_locked = (
+                        "密码" in error_msg or 
+                        "password" in error_msg or 
+                        "verify" in error_msg or 
+                        "验证" in error_msg
+                    )
+                    
+                    if is_locked:
+                        result["status"] = "锁号"
+                        result["status_message"] = f"密码验证失败: {original_error[:100]}"
+                        if verbose:
+                            print_result("⚠️ 检测结果: 锁号(密码验证失败)", result, "yellow")
+                            print_export_format(result)
+                        return result
+                
+                # Token失效或其他错误，继续步骤2检查找回密码邮箱
         else:
             if verbose:
-                print_colored(f"\n⚠️ 无Cookie，跳过Token登录", "yellow")
+                print_colored(f"\n⚠️ 步骤1: 无Cookie，跳过Token登录", "yellow")
         
-        # ========== 步骤3: 找回密码检查邮箱 ==========
+        # ========== 步骤2: 找回密码检查邮箱 ==========
         if verbose:
-            print(f"\n📋 步骤3: 检查找回密码邮箱...")
+            print(f"\n📋 步骤2: 检查找回密码邮箱...")
+            print(f"   使用代理: {parsed_proxy or '无'}")
         
         try:
             email_result = await client.get_password_reset_email_hint(username)
             masked_email = email_result.get("email_hint") if email_result.get("success") else None
             
             if verbose:
-                print(f"   找回密码显示的邮箱: {masked_email or '无法获取'}")
+                # 打印完整的返回结果
+                print_colored(f"\n   📦 完整返回结果:", "blue")
+                print(f"      success: {email_result.get('success')}")
+                print(f"      email_hint: {email_result.get('email_hint')}")
+                print(f"      error: {email_result.get('error')}")
+                print(f"      retry_count: {email_result.get('retry_count', 0)}")
+                print(f"      is_network_error: {email_result.get('is_network_error', False)}")
+                
+                print(f"\n   找回密码显示的邮箱: {masked_email or '无法获取'}")
                 if email_result.get("retry_count", 0) > 0:
                     print(f"   (重试了 {email_result.get('retry_count')} 次)")
             
             if not masked_email:
                 # 区分网络错误和其他错误
-                if email_result.get("is_network_error") or "重试" in str(email_result.get("error", "")):
+                full_error = email_result.get("error", "未知")
+                is_network_err = email_result.get("is_network_error") or "重试" in str(full_error)
+                
+                if verbose:
+                    print_colored(f"\n   ❌ 获取邮箱失败详情:", "red")
+                    print(f"      完整错误: {full_error}")
+                    print(f"      是否网络错误: {is_network_err}")
+                
+                if is_network_err:
                     result["status"] = "错误"
-                    result["status_message"] = f"网络错误: {email_result.get('error', '未知')}"
+                    result["status_message"] = f"网络错误: {full_error}"
                 else:
                     result["status"] = "改密"
-                    result["status_message"] = email_result.get("error") or "无法获取找回密码邮箱提示"
+                    result["status_message"] = full_error or "无法获取找回密码邮箱提示"
                 if verbose:
                     status_type = "错误" if result["status"] == "错误" else "改密"
-                    print_result(f"⚠️ 检测结果: {status_type} ({result['status_message'][:50]})", result, "yellow")
+                    print_colored(f"\n⚠️ 步骤2结果: {status_type}", "yellow")
+                    print_result(f"⚠️ 检测结果: {status_type} ({result['status_message'][:80]})", result, "yellow")
                     print_export_format(result)
                 return result
             
-            # 步骤4: 比较邮箱是否匹配
+            # 比较邮箱是否匹配
             if email:
                 if verbose:
                     print(f"   期望邮箱: {email}")
@@ -411,11 +460,11 @@ async def check_single_account(
                 print_export_format(result)
                 
         except Exception as e:
-            result["status"] = "改密"
+            result["status"] = "错误"
             result["status_message"] = f"检查找回密码失败: {str(e)[:100]}"
             if verbose:
-                print_colored(f"\n⚠️ 检查找回密码异常: {str(e)}", "yellow")
-                print_result("⚠️ 检测结果: 改密", result, "yellow")
+                print_colored(f"\n❌ 检查找回密码异常: {str(e)}", "red")
+                print_result("❌ 检测结果: 错误", result, "red")
                 print_export_format(result)
                 
     except Exception as e:
