@@ -500,7 +500,6 @@ class TwitterClient:
                 check_session, "GET", page_url, 
                 headers=page_headers, timeout=30
             )
-
             
             # 从响应中提取 cookie
             ct0 = check_session.cookies.get("ct0", "").strip()
@@ -510,7 +509,7 @@ class TwitterClient:
             # 3. 获取 tid 和构建请求
             url = "https://api.x.com/graphql/-oaLodhGbbnzJBACb1kk2Q/UserByScreenName"
             tid = utils.get_tid("/graphql/-oaLodhGbbnzJBACb1kk2Q/UserByScreenName")
-            print(f"tid: {tid}")
+            
             request_headers = {
                 "x-twitter-active-user": "yes",
                 "sec-fetch-site": "same-origin",
@@ -659,10 +658,9 @@ class TwitterClient:
                     "message": f"网络错误: {error_msg[:100]}"
                 }
             else:
-                # 非网络错误也返回 exists: None，表示无法判断
                 return {
                     "suspended": False,
-                    "exists": None,
+                    "exists": False,
                     "error": True,
                     "message": f"检查失败: {error_msg[:100]}"
                 }
@@ -676,158 +674,6 @@ class TwitterClient:
     async def _do_check_account_suspended(self, username: str) -> Dict[str, Any]:
         """执行检查账号冻结状态 (在线程池中执行避免阻塞)"""
         return await asyncio.to_thread(self._do_check_account_suspended_sync, username)
-    
-    async def check_suspended_with_session(self, username: str, max_retries: int = 3) -> Dict[str, Any]:
-        """
-        使用当前账号的session检查账号是否被冻结 (带网络重试机制)
-        如果session方式失败，自动回退到独立session方式
-        
-        返回:
-        {
-            "suspended": bool,  # 是否冻结
-            "exists": bool,     # 账号是否存在
-            "message": str      # 详细信息
-        }
-        """
-        last_error = None
-        session_failed = False
-        
-        # 如果没有cookie，直接使用独立session方式
-        if not self.cookie or not self.csrf_token:
-            return await self.check_account_suspended(username, max_retries)
-        
-        for attempt in range(max_retries):
-            if attempt > 0:
-                wait_time = random.uniform(1.0, 2.0)
-                await asyncio.sleep(wait_time)
-            
-            try:
-                # 使用 _session_request 发送请求（和 account_data 一样）
-                url = "https://api.x.com/graphql/-oaLodhGbbnzJBACb1kk2Q/UserByScreenName"
-                tid = utils.get_tid("/graphql/-oaLodhGbbnzJBACb1kk2Q/UserByScreenName")
-                
-                params = {
-                    "variables": json.dumps({
-                        "screen_name": username,
-                        "withSafetyModeUserFields": True
-                    }),
-                    "features": json.dumps({
-                        "hidden_profile_likes_enabled": True,
-                        "hidden_profile_subscriptions_enabled": True,
-                        "responsive_web_graphql_exclude_directive_enabled": True,
-                        "verified_phone_label_enabled": False,
-                        "responsive_web_profile_redirect_enabled": False,
-                        "subscriptions_verification_info_is_identity_verified_enabled": True,
-                        "subscriptions_verification_info_verified_since_enabled": True,
-                        "subscriptions_feature_can_gift_premium": True,
-                        "rweb_tipjar_consumption_enabled": True,
-                        "profile_label_improvements_pcf_label_in_post_enabled": True,
-                        "highlights_tweets_tab_ui_enabled": True,
-                        "responsive_web_twitter_article_notes_tab_enabled": True,
-                        "creator_subscriptions_tweet_preview_api_enabled": True,
-                        "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
-                        "responsive_web_graphql_timeline_navigation_enabled": True
-                    }),
-                    "fieldToggles": json.dumps({
-                        "withAuxiliaryUserLabels": False
-                    }),
-                }
-                
-                # 使用 _session_request 发送请求
-                response = await self._session_request(
-                    "GET", url,
-                    params=params,
-                    headers={
-                        "referer": f"https://x.com/{username}",
-                        "x-client-transaction-id": tid,
-                    }
-                )
-                
-                # 处理 Rate limit
-                if response.status_code == 429 or "rate limit" in response.text.lower():
-                    last_error = "请求被限流(Rate limit)"
-                    continue
-                
-                if response.status_code == 404:
-                    last_error = "请求返回404"
-                    continue
-                
-                resp_json = response.json()
-                data = resp_json.get('data', {})
-                
-                # 情况1: user 为 null -> 账号被冻结
-                user_data = data.get('user') if data else None
-                if data is not None and 'user' in data and user_data is None:
-                    return {
-                        "suspended": True,
-                        "exists": True,
-                        "message": "账号已被冻结"
-                    }
-                
-                # 如果 data 为空或没有 user 字段
-                if not data or 'user' not in data:
-                    last_error = "API返回数据异常"
-                    continue
-                
-                result = data.get('user', {}).get('result', {})
-                typename = result.get('__typename', '')
-                
-                # 情况2: UserUnavailable -> 检查是否冻结
-                if typename == 'UserUnavailable':
-                    reason = result.get('reason', '')
-                    message = result.get('message', '')
-                    if reason == 'Suspended' or 'suspended' in message.lower():
-                        return {
-                            "suspended": True,
-                            "exists": True,
-                            "message": "账号已被冻结"
-                        }
-                    else:
-                        return {
-                            "suspended": False,
-                            "exists": None,
-                            "error": True,
-                            "message": f"账号不可用: {reason or message}"
-                        }
-                
-                # 情况3: User -> 账号正常
-                if typename == 'User':
-                    return {
-                        "suspended": False,
-                        "exists": True,
-                        "message": "账号正常"
-                    }
-                
-                last_error = f"未知状态: {typename}"
-                
-            except Exception as e:
-                error_msg = str(e)
-                last_error = error_msg
-                session_failed = True
-                if self.is_network_error(error_msg):
-                    continue
-                else:
-                    # 非网络错误，尝试回退到独立session方式
-                    break
-        
-        # session方式失败，回退到独立session方式
-        if session_failed or last_error:
-            try:
-                return await self.check_account_suspended(username, max_retries)
-            except Exception as fallback_e:
-                return {
-                    "suspended": False,
-                    "exists": None,
-                    "error": True,
-                    "message": f"检查失败(回退也失败): {str(fallback_e)[:100]}"
-                }
-        
-        return {
-            "suspended": False,
-            "exists": None,
-            "error": True,
-            "message": f"重试{max_retries}次后仍失败: {last_error}"
-        }
     
     async def get_user_info(self, username: str) -> Dict[str, Any]:
         """获取用户详细信息"""
