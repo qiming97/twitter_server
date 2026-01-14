@@ -436,12 +436,12 @@ async def check_single_account(
                     print(f"   实际邮箱: {masked_email}")
                 
                 if compare_masked_email(email, masked_email):
-                    # 邮箱匹配，但Token登录失败
-                    result["status"] = "改密"
-                    result["status_message"] = f"邮箱匹配({masked_email})，但登录失败需改密"
+                    # 邮箱匹配，但Token登录失败，说明是锁号
+                    result["status"] = "锁号"
+                    result["status_message"] = f"邮箱匹配({masked_email})，账号被锁"
                     if verbose:
                         print_colored(f"   ✓ 邮箱匹配!", "green")
-                        print_result("⚠️ 检测结果: 邮箱匹配但需改密", result, "yellow")
+                        print_result("🔒 检测结果: 锁号(邮箱匹配但登录失败)", result, "yellow")
                 else:
                     # 邮箱不匹配
                     result["status"] = "改密"

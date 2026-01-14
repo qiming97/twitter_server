@@ -868,12 +868,12 @@ class TaskManager:
                 
                 # 比较邮箱是否匹配
                 if utils.compare_masked_email(expected_email, masked_email):
-                    # 邮箱匹配，但Token登录失败，需要改密
+                    # 邮箱匹配，但Token登录失败，说明是锁号
                     self.add_log("success", f"   ✓ @{username} 邮箱匹配!")
-                    account.status = "改密"
-                    account.status_message = f"邮箱匹配({masked_email})，但登录失败需改密"
-                    self.state.reset_pwd_count += 1
-                    self.add_log("warning", f"⚠️ @{username} 检测完成: 改密(邮箱匹配但登录失败)")
+                    account.status = "锁号"
+                    account.status_message = f"邮箱匹配({masked_email})，账号被锁"
+                    self.state.locked_count += 1
+                    self.add_log("warning", f"🔒 @{username} 检测完成: 锁号(邮箱匹配但登录失败)")
                 else:
                     # 邮箱不匹配，标记改密
                     self.add_log("error", f"   ✗ @{username} 邮箱不匹配!")

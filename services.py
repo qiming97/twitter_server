@@ -187,9 +187,9 @@ class AccountService:
                 # 比较邮箱是否匹配
                 # 例: q2c716@tuitegmail.com 应该匹配 q2****@t*********.***
                 if utils.compare_masked_email(expected_email, masked_email):
-                    # 邮箱匹配，但Token登录仍然失败，标记为改密
-                    account.status = AccountStatus.RESET_PWD.value
-                    account.status_message = f"邮箱匹配({masked_email})，但需要改密"
+                    # 邮箱匹配，但Token登录失败，说明是锁号
+                    account.status = AccountStatus.LOCKED.value
+                    account.status_message = f"邮箱匹配({masked_email})，账号被锁"
                 else:
                     # 邮箱不匹配，标记为改密
                     account.status = AccountStatus.RESET_PWD.value
